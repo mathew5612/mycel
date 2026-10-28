@@ -1,0 +1,15 @@
+{
+  "name": "mycel",
+  "version": "0.21.0",
+  "private": true,
+  "type": "module",
+  "description": "A local, shared project map for people and AI coding agents: blocks, notes, nested sub-maps and links. No dependencies.",
+  "license": "MIT",
+  "author": "mathew5612",
+  "homepage": "https://github.com/mathew5612/mycel#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/mathew5612/mycel.git" },
+  "bugs": { "url": "https://github.com/mathew5612/mycel/issues" },
+  "keywords": ["ai-agents", "claude-code", "codex", "mcp", "project-map", "mind-map", "local-first", "llm"],
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node mycel.mjs open", "test": "node --test test/*.test.mjs" }
+}

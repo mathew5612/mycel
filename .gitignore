@@ -1,0 +1,9 @@
+# Данные Mycel: реестр, карты, токен, ключи машин, плагин этого компьютера
+.mycel/
+.kontur/
+node_modules/
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
