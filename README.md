@@ -1,5 +1,7 @@
 # Mycel
 
+[![test](https://github.com/mathew5612/mycel/actions/workflows/test.yml/badge.svg)](https://github.com/mathew5612/mycel/actions/workflows/test.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A shared, living map of your project, for you and your AI coding agents. [По-русски](README.ru.md)
 
 ![A project map in Mycel: concepts with their mechanics inside, links, a note, checks passed and failed, and what the agent is doing right now](docs/screenshot.png)

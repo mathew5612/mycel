@@ -1,5 +1,7 @@
 # Mycel
 
+[![test](https://github.com/mathew5612/mycel/actions/workflows/test.yml/badge.svg)](https://github.com/mathew5612/mycel/actions/workflows/test.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Общая живая карта проекта — для вас и ваших AI-агентов. [English](README.md)
 
 ![Карта проекта в Mycel: концепции с механикой внутри, связи, заметка, пройденные и упавшие проверки, что агент делает сейчас](docs/screenshot.png)
