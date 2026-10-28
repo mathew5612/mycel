@@ -7,10 +7,17 @@ import { homedir } from 'node:os';
 
 const folds = process.platform === 'win32' || process.platform === 'darwin';
 const isRoot = p => parse(p).root === p;
-// Путь, который хранится в реестре: настоящий, без завершающего разделителя (кроме корня диска).
+// Путь, который хранится в реестре: настоящий, без завершающего разделителя (кроме корня диска). Если конца пути ещё
+// нет — настоящий путь ближайшей существующей папки и остаток как есть: так короткие имена Windows (C:\Users\RUNNER~1)
+// и ссылки раскрываются и у подпапки, которой нет.
 export function realDir(p) {
   let r = resolve(p);
-  try { r = realpathSync.native(r); } catch { /* папки нет: берём путь как есть */ }
+  for (let d = r, rest = []; ; ) {
+    try { r = join(realpathSync.native(d), ...rest); break; } catch { /* такой папки нет: поднимаемся выше */ }
+    const up = dirname(d);
+    if (up === d) break;
+    rest.unshift(basename(d)); d = up;
+  }
   return isRoot(r) ? r : r.replace(/[\\/]+$/, '');
 }
 export const pathKey = p => folds ? realDir(p).toLowerCase() : realDir(p);

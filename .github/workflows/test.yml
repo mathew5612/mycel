@@ -17,8 +17,8 @@ jobs:
         node: [22, 24]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
       # Модель, хаб, командная строка и MCP. Интерфейс (headless Chrome) и раскладка с замерами скорости — локально.
