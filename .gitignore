@@ -1,4 +1,4 @@
-# Данные Mycel: реестр, карты, токен, ключи машин, плагин этого компьютера
+# Mycel data: registry, maps, token, machine keys, this computer's plugin
 .mycel/
 .kontur/
 node_modules/

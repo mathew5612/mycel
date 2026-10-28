@@ -10,7 +10,7 @@ Mycel is a local web app with a freeform map: blocks, sticky notes, sub-maps nes
 
 The map stays alive afterwards. The agent shows what it is doing and which blocks it is changing. Blocks whose files changed are flagged as possibly outdated, and checks turn blocks green or red as tests run. Your own edits on the map reach the agent before its next step.
 
-> **Language.** The interface and the agent guide are in Russian for now. The map itself uses whatever language you and your agent write in.
+> **Language.** Mycel is in English; the interface can also be switched to Russian (EN / RU). The map itself uses whatever language you and your agent write in.
 
 ## Why
 
@@ -32,7 +32,7 @@ node mycel.mjs open
 
 This starts Mycel in the background and opens http://127.0.0.1:4317. On Windows you can also double-click `Mycel.cmd`. On macOS you can double-click `Mycel.command`; run `chmod +x Mycel.command` once first.
 
-Then open your agent in **your project's folder** and give it this line. The "Агенту" line at the top of the Mycel home page copies it for you.
+Then open your agent in **your project's folder** and give it this line. The "For your agent" line at the top of the Mycel home page copies it for you.
 
 ```text
 Read the Mycel guide and follow it: curl -s http://127.0.0.1:4317/agent
@@ -55,7 +55,7 @@ The ways to connect:
 
 | Agent | How it connects |
 | --- | --- |
-| Claude Code | `node <mycel>/mycel.mjs plugin --install`: MCP tools, hooks that track edited files and a session overview |
+| Claude Code | `node <mycel>/mycel.mjs plugin --install`: MCP tools, hooks that track edited files, show the agent's task list as a progress bar under the map, and give a session overview |
 | Codex, Cursor, Gemini / Antigravity, VS Code, Windsurf, Cline, Claude Desktop | `node <mycel>/mycel.mjs plugin --agent <name>` prints the MCP entry and where it goes |
 | Local models (Ollama, LM Studio, llama.cpp, vLLM) | `node <mycel>/mycel.mjs chat`: a built-in agent with all Mycel tools and read-only access to the project files. Client configs: `plugin --agent lmstudio\|continue\|goose\|opencode\|jan\|openwebui` |
 | Anything else | The CLI (`node <mycel>/mycel.mjs <command>` from the project folder), function definitions (`mycel tools --format openai\|mcp`, `mycel call <tool> '<json>'`) or the HTTP API |
@@ -80,9 +80,9 @@ node mycel.mjs health            # red, outdated, unchecked, planned; TODOs and 
 - **Create:** right-click on empty space for a block or a note, or on a block for a block inside it.
 - **Link:** drag from any edge of a block (or Alt+drag from anywhere on it) and drop anywhere on another block.
 - **Navigate:** double-click a block with a sub-map to dive in, and press Esc to go back up. The slider at the bottom folds the map by level.
-- **Hand your edits over:** "Закончить правки" (Finish edits) sends all your changes to the agent as one event.
-- **Proposals:** the agent's suggestions show up dashed and highlighted, with "Принять" (Accept) and "Отклонить" (Reject).
-- **History and health:** "История" lists the last 200 changes with author and reason. "Здоровье" highlights what needs attention.
+- **Hand your edits over:** "Finish edits" sends all your changes to the agent as one event.
+- **Proposals:** the agent's suggestions show up dashed and highlighted, with "Accept" and "Reject".
+- **History and health:** "History" lists the last 200 changes with author and reason. "Health" highlights what needs attention.
 
 ## Virtual machines
 
@@ -90,7 +90,7 @@ Agents inside a VM (VMware, VirtualBox, Hyper-V, WSL) can use the Mycel on your 
 
 - **On the main computer:** run `node mycel.mjs remote on`.
 - **In the VM, the agent runs:** `curl -fsS http://<host address>:4317/install.sh | sh`. This installs Node.js if needed and a copy of Mycel, then asks for access with a 4-digit code.
-- **You:** check that the code matches and click "Разрешить" (Allow) in Mycel. Each machine gets its own key, which you can revoke at any time.
+- **You:** check that the code matches and click "Allow" in Mycel. Each machine gets its own key, which you can revoke at any time.
 
 ## Privacy and security
 
@@ -103,7 +103,7 @@ Agents inside a VM (VMware, VirtualBox, Hyper-V, WSL) can use the Mycel on your 
 
 ## Documentation
 
-- [docs/reference.md](docs/reference.md): the full reference (in Russian). Covers the interface, every command, the HTTP API and the map format, storage and recovery.
+- [docs/reference.md](docs/reference.md): the full reference. Covers the interface, every command, the HTTP API and the map format, storage and recovery.
 - [src/agent-guide.md](src/agent-guide.md): the guide agents receive at `/agent`.
 - [CONCEPT.md](CONCEPT.md): requirements and design decisions. [PROJECT_STATE.md](PROJECT_STATE.md): implementation log.
 - [AGENTS.md](AGENTS.md): rules for agents working on Mycel itself.
@@ -116,7 +116,7 @@ node --test test/*.test.mjs
 
 The UI tests drive headless Chrome; they are skipped when Chrome is not found (set `MYCEL_CHROME` to its path). There is no build step. After changing `public/`, reload the page. After changing the server, run `node mycel.mjs stop`, then `node mycel.mjs open`. Tests use temporary folders and free ports and never touch your `.mycel/`.
 
-Mycel is at an early stage (0.21). Issues and pull requests are welcome.
+Mycel is at an early stage (0.22). Issues and pull requests are welcome.
 
 ## License
 

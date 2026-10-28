@@ -4,17 +4,17 @@ export function seed(projectName, demo = false) {
   const note = (id, attachedTo, text, x, y, parentId = null) => makeNode({ id, type: 'note', attachedTo, parentId, text, x, y });
   const inner = (id, parentId, title, text, x, y, w = 200, h = 90) => makeNode({ id, parentId, title, text, x, y, w, h });
   const nodes = demo ? [
-    node('mycel', 'Mycel', 'Свободная карта продукта: блоки, заметки и связи между ними.', 0, 40, 'blue', 240, 100),
-    node('blocks', 'Блоки', 'Правый клик по пустому месту создаёт блок или заметку. Двигайте блок и растягивайте за правый нижний угол.', 380, -150, '', 220, 140),
-    node('links', 'Связи', 'Потяните кружок на краю блока к другому блоку. У связи может быть подпись.', 380, 30, '', 220, 120),
-    node('history', 'История', 'Каждое изменение записано: кто, когда и что.', 380, 190, '', 220, 120),
-    note('note-1', 'blocks', 'Правый клик по блоку — заметка к нему. Она переезжает вместе с блоком.', 560, -235),
-    node('checkout', 'Подкарта', 'Правый клик по блоку — «Блок внутри». Блоки перетаскиваются в подкарту и обратно, шеврон сворачивает её.', 0, 360, 'green', 580, 280),
-    inner('cart', 'checkout', 'Корзина', 'Вложенный блок', 24, 24),
-    inner('payment', 'checkout', 'Оплата', 'Вложенный блок', 304, 24)
+    node('mycel', 'Mycel', 'A free-form product map: blocks, notes and the links between them.', 0, 40, 'blue', 240, 100),
+    node('blocks', 'Blocks', 'Right-click an empty spot to create a block or a note. Drag a block to move it and its bottom-right corner to resize it.', 380, -150, '', 220, 140),
+    node('links', 'Links', 'Drag the circle on a block edge to another block. A link can have a label.', 380, 30, '', 220, 120),
+    node('history', 'History', 'Every change is recorded: who, when and what.', 380, 190, '', 220, 120),
+    note('note-1', 'blocks', 'Right-click a block to add a note to it. The note moves with the block.', 560, -235),
+    node('checkout', 'Sub-map', 'Right-click a block and choose "Block inside". Blocks can be dragged into the sub-map and back; the chevron collapses it.', 0, 360, 'green', 580, 280),
+    inner('cart', 'checkout', 'Cart', 'Nested block', 24, 24),
+    inner('payment', 'checkout', 'Payment', 'Nested block', 304, 24)
   ] : [node('start', projectName, '', 0, 0, 'blue')];
-  const edges = demo ? [['mycel', 'blocks', ''], ['mycel', 'links', ''], ['mycel', 'history', ''], ['cart', 'payment', 'сумма']].map(([source, target, label], i) => ({ id: `edge-${i}`, source, target, label })) : [];
+  const edges = demo ? [['mycel', 'blocks', ''], ['mycel', 'links', ''], ['mycel', 'history', ''], ['cart', 'payment', 'total']].map(([source, target, label], i) => ({ id: `edge-${i}`, source, target, label })) : [];
   return { schemaVersion: 3, revision: 0, updatedAt: new Date().toISOString(), nodes, edges, history: [] };
 }
-// Карта нового проекта в хабе — пустая: агент строит её с нуля, человек видит, как она растёт.
+// A new project's map in the hub is empty: the agent builds it from scratch and the person watches it grow.
 seed.empty = at => ({ schemaVersion: 3, revision: 0, updatedAt: at, nodes: [], edges: [], history: [] });

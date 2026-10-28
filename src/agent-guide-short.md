@@ -1,25 +1,30 @@
-# Mycel: коротко для агента
+# Mycel: short agent guide
 
-Mycel — общая карта проекта. Человек смотрит её в браузере ({{url}}) и сразу видит твои правки. Ты меняешь карту
-инструментами `mycel_*` (или командой `mycel`), с человеком говоришь в своём окне.
+Mycel is a shared project map. The person watches it in the browser ({{url}}) and sees your edits right away. You
+change the map with the `mycel_*` tools (or the `mycel` command) and talk to the person in your own window.
 
-Уровни карты — по вложенности:
-- Концепция (блоки основной карты) и механика (их подкарты) — для человека без программирования: название 1–4
-  простых слова, текст — одно короткое предложение. Без кода, файлов и имён из кода.
-- Техника (подкарты механики) — файлы, библиотеки, данные: файлы в `обратных кавычках`, у блока `files` — его файлы
-  от корня проекта, `test` — команда проверки.
-- Код (подкарты техники) — шаги: название — действие, в тексте функция и файл.
+Map levels follow nesting:
+- Concept (blocks of the main map) and Mechanics (their sub-maps) are for a person who does not program: a title of
+  1–4 simple words, a text of one short sentence. No code, files or names from code.
+- Technical (sub-maps of Mechanics): files, libraries, data. Files in `backticks`; a block's `files` are its files
+  from the project root, `test` is its test command.
+- Code (sub-maps of Technical): steps. The title is an action, the text names the function and file.
 
-Как работать:
-1. Прочитай карту: `mycel_context` (с `brief: true` — короче). Пустая — построй её `mycel_build`: сначала 4–8
-   концепций со связями, потом по одной концепции её механику с техникой внутри (`parent` — id концепции).
-2. Точечные правки — `mycel_apply` с операциями `add-node`, `update-node`, `delete-node`, `add-edge`,
-   `update-edge`, `delete-edge`. Запись идёт поверх прочитанного: если карту изменили, перечитай и повтори.
-3. Изменение логики, которое человек не утверждал, — не пиши сразу, а предложи: `mycel_propose` с `title`.
-   Человек нажимает «Принять» или «Отклонить».
-4. Меняешь файлы проекта — отметь их `mycel_touch`, потом обнови описание их блоков (`mycel_apply`) или подтверди,
-   что оно верно, — `mycel_fresh`.
-5. Проверка — `mycel_check` с id блоков: рамки краснеют и зеленеют на глазах у человека.
-6. Что делаешь сейчас — `mycel_doing`; показать человеку блок — `mycel_show`; что он выделил — `mycel_selection`.
+Language: write map content (block titles and texts, notes, link labels) in the language the person uses with you;
+if unsure, in English.
 
-Не придумывай устройство проекта: читай файлы. Пиши по-русски, коротко.
+How to work:
+1. Read the map: `mycel_context` (with `brief: true`, shorter). If it is empty, build it with `mycel_build`: first
+   4–8 concepts with links, then one concept at a time, its mechanics with the technical level inside (`parent` is the
+   concept id).
+2. Point edits: `mycel_apply` with the operations `add-node`, `update-node`, `delete-node`, `add-edge`,
+   `update-edge`, `delete-edge`. Writes go on top of what you read: if the map has changed, read it again and repeat.
+3. A logic change the person has not approved: do not write it right away, propose it with `mycel_propose` and a
+   `title`. The person presses "Accept" or "Reject".
+4. When you change project files, mark them with `mycel_touch`, then update the description of their blocks
+   (`mycel_apply`) or confirm that it is still right with `mycel_fresh`.
+5. Checks: `mycel_check` with block ids; the borders turn red and green while the person watches.
+6. What you are doing now: `mycel_doing`; to show the person a block: `mycel_show`; what they selected:
+   `mycel_selection`.
+
+Do not invent how the project works: read the files. Keep it short.

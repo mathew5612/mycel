@@ -1,86 +1,86 @@
-# Ревью подкарт (версия 0.6)
+# Sub-map review (version 0.6)
 
-26 октября 2026. Ревью кода `4f3d8c8` по трём направлениям: код и модель, взаимодействие и вёрстка, тексты и документация. Каждую находку проверяли два независимых агента: один воспроизводил дефект, другой оценивал, стоит ли его чинить в рамках задачи «подкарты со сворачиванием и нормальной вёрсткой». Находка подтверждена, если оба согласились.
+26 October 2026. A review of commit `4f3d8c8` in three areas: code and model, interaction and layout, texts and documentation. Every finding was checked by two independent agents: one reproduced the defect, the other judged whether it was worth fixing within the task "sub-maps with collapsing and proper layout". A finding counts as confirmed if both agreed.
 
-Пользователь остановил ревью до конца проверки. Проверены все находки по коду и 14 из 16 по вёрстке; находки по текстам не проверялись.
+The user stopped the review before checking was finished. All code findings and 14 of the 16 layout findings were checked; the text findings were not.
 
-Ссылки вида `файл:строка` указывают на код в `4f3d8c8`.
+References of the form `file:line` point to the code in `4f3d8c8`.
 
-## Состояние на 27 октября 2026 (версия 0.6.1)
+## State on 27 October 2026 (version 0.6.1)
 
-Исправлены все 18 подтверждённых дефектов и оба непроверенных пункта по вёрстке; каждый проверен в браузере на демо-карте с контейнером второго уровня, модель — тестами. Спорный пункт решён пользователем: надпись считает и заметки («2 блока, 1 заметка внутри»). Находки по текстам и документации проверены по коду и исправлены все, кроме пункта про отклонение переноса блока с заметками: в 0.6.1 заметки переезжают вместе с блоком, отклонения больше нет, README это описывает. Открытых пунктов нет.
+All 18 confirmed defects and both unchecked layout items are fixed; each was checked in the browser on a demo map with a second-level container, and the model with tests. The disputed item was decided by the user: the label counts notes too ("2 blocks, 1 note inside"). The text and documentation findings were checked against the code and all were fixed, except the item about rejecting a move of a block with notes: in 0.6.1 notes move with the block, there is no rejection any more, and the README describes this. No items are open.
 
-Где исправление отличается от предложенного:
+Where the fix differs from the proposed one:
 
-- 3: жест начинается от показанного размера, но сохранённый размер может быть меньше содержимого — он задаёт вид свёрнутой подкарты. Ограничение снизу — шапка и надпись «N блоков внутри» (высота шапки + 32 px), поэтому свёрнутый вид не ломается, а уменьшение развёрнутой подкарты делает свёрнутую компактной.
-- 5: шапка контейнера — отдельный элемент `.head` на всю ширину и высоту шапки, за неё берётся и пустой контейнер.
-- 12: на каждом уровне сначала рисуются контейнеры, затем блоки, затем заметки, поэтому блок, положенный на подкарту, лежит поверх её шапки и содержимого и после отпускания.
-- 13: связь контейнера с вложенным блоком идёт от ближней из левой, правой и нижней сторон рамки; верхнюю сторону не берём, чтобы линия не пересекала шапку.
-- 14: запас у края вложенного блока обрезается полем подкарты. Бросок на шапку достаётся контейнеру при любом масштабе, а бросок в поле рядом с вложенным блоком — по-прежнему этому блоку.
-- 16 и 17: заметки следуют за блоком при любом `update-node` с координатами или уровнем, включая перенос на другой уровень.
-- Отрицательные координаты вложенных узлов: `validate` их по-прежнему принимает, чтобы не отклонять уже сохранённые карты; README и PROJECT_STATE уточняют, что ограничение действует при перетаскивании.
-- Удаление блока в истории: «Удалён блок «a» (вложенных узлов: 3, заметок: 1)» — вложенное и прикреплённые снаружи заметки считаются отдельно.
+- 3: the gesture starts from the shown size, but the saved size may be smaller than the content: it sets how the collapsed sub-map looks. The lower bound is the header plus the "N blocks inside" label (header height + 32 px), so the collapsed view does not break, and shrinking an expanded sub-map makes the collapsed one compact.
+- 5: the container header is a separate `.head` element spanning the full width and height of the header; an empty container can be grabbed by it too.
+- 12: on each level, containers are drawn first, then blocks, then notes, so a block placed on a sub-map lies above its header and content after release too.
+- 13: a link from a container to a block nested in it starts from the nearest of the left, right and bottom sides of the frame; the top side is not used so the line does not cross the header.
+- 14: the margin around a nested block's edge is clipped by the sub-map's field. A drop on the header goes to the container at any zoom, while a drop in the field next to a nested block still goes to that block.
+- 16 and 17: notes follow the block on any `update-node` with coordinates or level, including a move to another level.
+- Negative coordinates of nested nodes: `validate` still accepts them so already saved maps are not rejected; the README and PROJECT_STATE now say the restriction applies when dragging.
+- Deleting a block in History: `Deleted block "a" (nested nodes: 3, notes: 1)`: nested content and notes attached from outside are counted separately.
 
-## Подтверждено, высокая важность
+## Confirmed, high severity
 
-1. **Вложенный контейнер второго уровня и глубже перехватывает указатель всем телом.** Связи внутри него не наводятся и не выделяются, правый клик и перетаскивание по полю работают как по шапке. Причина: правило `.block.container .sub > .block { pointer-events: auto }` в `public/style.css:175` срабатывает и для вложенных контейнеров и перебивает `pointer-events: none`. Исправление: сузить до `.sub > .block:not(.container)`. Добавить в сценарий проверку связи внутри контейнера второго уровня.
+1. **A nested container at the second level or deeper captures the pointer with its whole body.** Links inside it cannot be hovered or selected, and right-click and dragging on the field act as if on the header. Cause: the rule `.block.container .sub > .block { pointer-events: auto }` in `public/style.css:175` also matches nested containers and overrides `pointer-events: none`. Fix: narrow it to `.sub > .block:not(.container)`. Add a check of a link inside a second-level container to the scenario.
 
-## Подтверждено, средняя важность
+## Confirmed, medium severity
 
-2. **Фон поля подкарты рисуется поверх связей.** На втором уровне связи и ниточки заметок почти не видны, заливка вложенных контейнеров искажена (`public/style.css:174`). Исправление: рисовать подложку через `.sub::before` с `z-index: -1`, без фона у самого `.sub`.
-3. **Уголок размера у выросшего контейнера не следует за курсором.** Жест стартует от сохранённых `w/h`, а не от показанного размера; уменьшение молча сохраняет 120 × 60 и ломает свёрнутый вид (`public/app.js:613`, `:661`). Исправление: начинать жест от `layoutSize(n)` и не записывать размер меньше содержимого.
-4. **Правка контейнера без текста: поле ввода текста лежит под полем подкарты**, набираемый текст не виден (`public/app.js:74`, `headerH` берёт текст из узла, а не из редактора). Исправление: пока контейнер редактируется, считать шапку полной высоты и перекладывать поле.
-5. **Контейнер без названия и текста не за что взять**: нельзя перетащить, открыть на правку или вызвать меню по шапке (`public/style.css:163`, `:168`). Исправление: сделать всю полосу шапки зоной захвата отдельным элементом или показывать заглушку «без названия».
-6. **«Заметка к блоку» у вложенного блока получает отрицательный `y`** и вылезает на шапку контейнера (`public/app.js:371`). Исправление: внутри подкарты ограничивать координаты нулём или ставить заметку справа от блока.
-7. **Перетаскивание вложенного блока к краю поля рассинхронизирует его заметки**: во время жеста заметка едет без ограничения, после отпускания прыгает, на сервере сохраняется с отрицательной координатой (`public/app.js:654`). Исправление: сначала ограничить сдвиг всей группы (блок и заметки), потом применять одну дельту ко всем.
-8. **Свёрнутый контейнер прозрачен для клика в середине карточки**: правый клик предлагает создать блок на основной карте поверх него (`public/style.css:163`). Исправление: `.block.container.collapsed { pointer-events: auto }`.
-9. **Шеврон сворачивания рисуется поверх заметок и блоков** (`z-index: 1`, `public/style.css:176`). Заметка к контейнеру по умолчанию ложится на шеврон, клик по ней сворачивает контейнер. Исправление: убрать `z-index` у шеврона, заметку к контейнеру ставить в стороне от него.
-10. **После сворачивания подкарты выделение остаётся на скрытом блоке или связи**: висит панель, Delete удаляет невидимое, Enter и Tab блокируют живые обновления (`public/app.js:192`). Исправление: в `renderMap` сбрасывать выделение, если узел или конец связи не виден.
+2. **The sub-map field background is drawn above links.** At the second level, links and note threads are barely visible, and the fill of nested containers is distorted (`public/style.css:174`). Fix: draw the backing with `.sub::before` and `z-index: -1`, with no background on `.sub` itself.
+3. **The resize corner of a grown container does not follow the cursor.** The gesture starts from the saved `w/h` rather than the shown size; shrinking silently saves 120 × 60 and breaks the collapsed view (`public/app.js:613`, `:661`). Fix: start the gesture from `layoutSize(n)` and do not save a size smaller than the content.
+4. **Editing a container without text: the text input lies under the sub-map field**, and the text being typed is not visible (`public/app.js:74`, `headerH` takes the text from the node, not from the editor). Fix: while the container is being edited, treat the header as full height and move the field.
+5. **A container with no title and no text has nothing to grab**: it cannot be dragged, opened for editing or given a menu through the header (`public/style.css:163`, `:168`). Fix: make the whole header strip a grab area with a separate element, or show an "untitled" placeholder.
+6. **"Note on block" on a nested block gets a negative `y`** and sticks out onto the container header (`public/app.js:371`). Fix: inside a sub-map, clamp coordinates at zero or place the note to the right of the block.
+7. **Dragging a nested block to the edge of the field desynchronises its notes**: during the gesture the note moves without the limit, after release it jumps, and the server saves it with a negative coordinate (`public/app.js:654`). Fix: first limit the shift of the whole group (block and notes), then apply one delta to all of them.
+8. **A collapsed container lets clicks through in the middle of the card**: right-click offers to create a block on the main map on top of it (`public/style.css:163`). Fix: `.block.container.collapsed { pointer-events: auto }`.
+9. **The collapse chevron is drawn above notes and blocks** (`z-index: 1`, `public/style.css:176`). A note on a container lands on the chevron by default, and a click on the note collapses the container. Fix: remove `z-index` from the chevron and place a container's note away from it.
+10. **After a sub-map is collapsed, the selection stays on a hidden block or link**: the panel stays, Delete deletes something invisible, Enter and Tab block live updates (`public/app.js:192`). Fix: in `renderMap`, clear the selection if the node or a link end is not visible.
 
-## Подтверждено, низкая важность
+## Confirmed, low severity
 
-11. **Смещение на 1 px на каждый уровень вложенности**: `worldRect` не учитывает рамку контейнера, концы связей не доходят до глубоких блоков, блоки вылезают за поле на 2 px (`public/app.js:97`). Исправление: учитывать рамку (`PAD + 1`, `headerH + 1`) или рисовать рамку тенью.
-12. **Блок, перетащенный на контейнер, оказывается между фоном контейнера и его текстом**, надписи накладываются. Исправление: поднимать перетаскиваемый блок во время жеста или держать фон и шапку контейнера в одном слое.
-13. **Связь «контейнер → его собственный вложенный блок» идёт от дальней рамки сквозь блок** (`public/app.js:218`). Исправление: для вложенных прямоугольников вести связь от ближней стороны или запретить такую связь.
-14. **При масштабе 50 % бросок связи на название контейнера выбирает его вложенный блок** (`public/app.js:544`). Исправление: сначала искать точное попадание, запас у края применять, только если его нет.
-15. **Ошибка сохранения при сворачивании, смене цвета и пунктах меню не показывается**, локальное состояние расходится с сервером (`public/app.js:797`). Исправление: `return await commit(...)`, при ошибке перечитывать карту.
-16. **Модель: `update-node` с текущим `parentId` отключает сдвиг прикреплённых заметок** (`src/model.mjs:124`). Исправление: пропускать сдвиг только при реальной смене уровня.
-17. **Модель: перенос блока с прикреплёнными заметками на другой уровень отклоняется** ошибкой про заметку (`src/model.mjs:46`). Исправление: переносить заметки вместе с блоком с тем же смещением или описать требование в README.
-18. **Модель: `validate` падает с TypeError и отвечает 500 вместо 400**, если у предка в цепочке несуществующий `parentId` (`src/model.mjs:39`). Исправление: сначала отдельным проходом проверить все ссылки `parentId`.
+11. **A 1 px offset per nesting level**: `worldRect` does not account for the container frame, link ends do not reach deep blocks, and blocks stick out of the field by 2 px (`public/app.js:97`). Fix: account for the frame (`PAD + 1`, `headerH + 1`) or draw the frame as a shadow.
+12. **A block dragged onto a container ends up between the container's background and its text**, and the labels overlap. Fix: raise the dragged block during the gesture, or keep the container's background and header in one layer.
+13. **A "container → its own nested block" link starts from the far side of the frame and runs through the block** (`public/app.js:218`). Fix: for nested rectangles, start the link from the near side, or forbid such links.
+14. **At 50 % zoom, dropping a link on a container's title picks its nested block** (`public/app.js:544`). Fix: look for an exact hit first and use the edge margin only if there is none.
+15. **A save error on collapsing, colour change and menu items is not shown**, and the local state drifts from the server (`public/app.js:797`). Fix: `return await commit(...)`, and re-read the map on error.
+16. **Model: `update-node` with the current `parentId` turns off the shift of attached notes** (`src/model.mjs:124`). Fix: skip the shift only on a real level change.
+17. **Model: moving a block with attached notes to another level is rejected** with an error about the note (`src/model.mjs:46`). Fix: move the notes with the block by the same offset, or describe the requirement in the README.
+18. **Model: `validate` crashes with a TypeError and answers 500 instead of 400** if an ancestor in the chain has a `parentId` that does not exist (`src/model.mjs:39`). Fix: first check all `parentId` references in a separate pass.
 
-## Спорное
+## Disputed
 
-- **Свёрнутый контейнер, в котором только заметки, пишет «0 блоков внутри»** (`public/app.js:208`). Ревью кода подтвердило дефект, проверяющий ревью вёрстки отклонил: подпись соответствует README. Предложение: считать и заметки («1 заметка внутри», «2 блока, 1 заметка»).
+- **A collapsed container holding only notes says "0 blocks inside"** (`public/app.js:208`). The code review confirmed the defect; the layout reviewer doing the check rejected it, because the label matches the README. Proposal: count notes too ("1 note inside", "2 blocks, 1 note").
 
-## Отклонено
+## Rejected
 
-- **Производительность на очень больших картах.** При 1700 узлах перетаскивание стоит 60–76 мс на кадр, перерисовка 190–300 мс; при 500 узлах около 60 кадров в секунду. Признано не относящимся к задаче. На будущее: индексы `id → узел` и `parentId → дети`, кэш `worldRect`, перерисовка только затронутых связей.
+- **Performance on very large maps.** With 1700 nodes, dragging costs 60–76 ms per frame and redrawing 190–300 ms; with 500 nodes it is about 60 frames per second. Judged out of scope for the task. For the future: `id → node` and `parentId → children` indexes, a `worldRect` cache, redrawing only the affected links.
 
-## Не проверено: вёрстка
+## Not checked: layout
 
-- Наведение на вложенный блок показывает порт и угол размера у всех внешних контейнеров (`public/style.css:186`). Предложение: показывать их только у непосредственно наведённого блока.
-- В режиме правки контейнера поля ввода на 12 px шире контейнера, название уходит под шеврон. Предложение: `width: auto` у полей и отступ справа под шеврон.
+- Hovering a nested block shows the port and resize corner on all outer containers (`public/style.css:186`). Proposal: show them only on the block directly under the pointer.
+- In container edit mode, the input fields are 12 px wider than the container and the title runs under the chevron. Proposal: `width: auto` on the fields and right padding for the chevron.
 
-## Не проверено: тексты и документация
+## Not checked: texts and documentation
 
-- **Пример пакета из README не проходит на стартовой карте**: id `checkout` и `payment` уже заняты (высокая). Заменить id на свободные; в ошибке валидации называть повторяющийся id.
-- CONCEPT: устаревшая фраза, что бросок связи на пустое место создаёт блок.
-- README и PROJECT_STATE: «стартовая карта из четырёх блоков» устарело, там блоки, заметка, связи и подкарта.
-- PROJECT_STATE: «отмена есть только у удаления блока», а отменяется удаление блока, заметки и связи.
-- История: при перекреплении заметки пишется «Прикреплена заметка», а состав говорит «Изменена заметка» (`src/model.mjs:133`).
-- README: перекрепить заметку можно только на блок того же уровня; над подкартой заметка основной карты цепляется к контейнеру.
-- `examples/agent-update.mjs` ставит новый блок поверх выросшей подкарты, а README обещает «правее остальных».
-- Контекст `/api/context` и README неточно описывают отсчёт координат вложенных узлов и размер блока с подкартой.
-- PROJECT_STATE утверждает, что вложенный узел нельзя увести левее и выше поля, но API принимает отрицательные координаты. Либо проверять в `validate`, либо уточнить, что ограничение действует при перетаскивании.
-- README не говорит, что при смене `parentId` блока пакет отклоняется из-за его прикреплённых заметок.
-- Сообщения модели называют «блоком» любой узел, включая заметку.
-- «Удалён блок … и вложенное (N)» считает прикреплённые заметки вложенными.
-- Имя узла в истории обрезается посреди слова без многоточия.
-- Тексты стартовой карты: текст блока «Блоки» обрезан, «Подкарта» не объясняет, как её создать.
-- README: «правый клик открывает то же меню», хотя меню блока отличается от панели.
-- PROJECT_STATE: надпись «N блоков внутри» только разворачивает подкарту, а не сворачивает.
-- PROJECT_STATE: устаревшие упоминания `parentId` у заметки (с 0.6 это `attachedTo`).
-- README и шаблон агента: в описании API нет заметок и вложенности.
-- `/api/context`: «Revision» вместо «Ревизия», «свёрнут» вместо «подкарта свёрнута», «Заметки внутри <id>» без названия блока.
-- AGENTS.md противопоставляет свободную карту «уровням», хотя с 0.6 «уровень» — термин модели.
-- Глагол «развернуть» значит и «раскрыть подкарту», и «сменить направление связи». Предложение: «Сменить направление».
+- **The batch example from the README fails on the starter map**: the ids `checkout` and `payment` are already taken (high). Replace the ids with free ones; name the repeated id in the validation error.
+- CONCEPT: an outdated sentence says that dropping a link on empty space creates a block.
+- README and PROJECT_STATE: "a starter map of four blocks" is outdated; it has blocks, a note, links and a sub-map.
+- PROJECT_STATE: "only block deletion can be undone", while deleting a block, a note and a link can all be undone.
+- History: re-attaching a note writes "Attached note", while the change summary says "Changed note" (`src/model.mjs:133`).
+- README: a note can only be re-attached to a block on the same level; over a sub-map, a main-map note attaches to the container.
+- `examples/agent-update.mjs` places a new block on top of a grown sub-map, while the README promises "to the right of the others".
+- The `/api/context` context and the README describe inaccurately where nested node coordinates are measured from and the size of a block with a sub-map.
+- PROJECT_STATE says a nested node cannot be moved left of or above the field, but the API accepts negative coordinates. Either check this in `validate`, or say that the restriction applies when dragging.
+- The README does not say that when a block's `parentId` changes, the batch is rejected because of its attached notes.
+- Model messages call any node a "block", including a note.
+- "Deleted block … and nested content (N)" counts attached notes as nested.
+- The node name in History is cut in the middle of a word with no ellipsis.
+- Starter map texts: the text of the "Blocks" block is cut off, and "Sub-map" does not explain how to create one.
+- README: "right-click opens the same menu", although the block menu differs from the panel.
+- PROJECT_STATE: the "N blocks inside" label only expands the sub-map, it does not collapse it.
+- PROJECT_STATE: outdated mentions of `parentId` on a note (since 0.6 it is `attachedTo`).
+- README and the agent template: the API description has no notes or nesting.
+- `/api/context`: the English word "Revision" in otherwise Russian text, "collapsed" instead of "sub-map collapsed", "Notes inside <id>" without the block title.
+- AGENTS.md contrasts the free map with "levels", although since 0.6 "level" is a model term.
+- The same Russian verb was used both for expanding a sub-map ("Expand") and for reversing a link ("Flip arrow"). Proposal: "Reverse direction".

@@ -1,7 +1,7 @@
-// Доступ виртуальных машин без пересылки ключа. Агент в виртуальной машине просит доступ (запрос с кодом из четырёх
-// цифр), человек сверяет код и нажимает «Разрешить» в Mycel на основной машине — машина получает свой ключ. Ключи
-// машин хранятся в devices.json только хэшами; отозванный ключ перестаёт работать сразу. Запрос живёт 10 минут, от
-// одного адреса — один, всего — не больше пяти.
+// Access for virtual machines without passing a key around. The agent in a virtual machine asks for access (a request
+// with a four-digit code), the person checks the code and clicks "Allow" in Mycel on the main computer, and the machine
+// gets its own key. Machine keys are stored in devices.json only as hashes; a revoked key stops working at once. A
+// request lives 10 minutes, one per address, no more than five in total.
 import { readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes, randomInt, randomUUID, createHash, timingSafeEqual } from 'node:crypto';
@@ -34,21 +34,21 @@ export async function openAccess(data, onChange = () => {}) {
   return {
     devices: () => devices.map(pub),
     pending,
-    // Запрос из виртуальной машины: без ключа. secret — чтобы забрать ответ мог только тот, кто спросил.
+    // A request from a virtual machine, without a key. secret makes sure only the one who asked can pick up the answer.
     request(name, address) {
       expire();
       for (const [id, r] of requests) if (r.address === address && r.status === 'pending') requests.delete(id);
-      if (pending().length >= PENDING) throw new Problem('Слишком много запросов доступа: подождите, пока человек ответит на прежние.', 429);
-      const r = { id: randomUUID(), code: String(randomInt(1000, 10000)), name: clean(name) || 'виртуальная машина', address, at: Date.now(), secret: randomBytes(24).toString('hex'), status: 'pending' };
+      if (pending().length >= PENDING) throw new Problem('Too many access requests: wait until the person answers the earlier ones.', 429);
+      const r = { id: randomUUID(), code: String(randomInt(1000, 10000)), name: clean(name) || 'virtual machine', address, at: Date.now(), secret: randomBytes(24).toString('hex'), status: 'pending' };
       requests.set(r.id, r);
       onChange();
       return { id: r.id, code: r.code, secret: r.secret, expiresIn: TTL / 1000 };
     },
-    // Ответ отдаётся один раз: ключ после этого есть только у машины.
+    // The answer is given once: after that only the machine has the key.
     poll(id, secret) {
       expire();
       const r = requests.get(id);
-      if (!r || typeof secret !== 'string' || !same(hash(secret), hash(r.secret))) throw new Problem('Запрос не найден.', 404);
+      if (!r || typeof secret !== 'string' || !same(hash(secret), hash(r.secret))) throw new Problem('Request not found.', 404);
       if (r.status !== 'approved') return { status: r.status };
       requests.delete(id);
       return { status: 'approved', key: r.key, project: r.project ?? null };
@@ -56,7 +56,7 @@ export async function openAccess(data, onChange = () => {}) {
     async approve(id, project) {
       expire();
       const r = requests.get(id);
-      if (!r || r.status !== 'pending') throw new Problem('Запрос уже не ждёт ответа.', 409);
+      if (!r || r.status !== 'pending') throw new Problem('The request is no longer waiting for an answer.', 409);
       const key = randomBytes(32).toString('hex');
       devices.push({ id: randomUUID(), name: r.name, address: r.address, project: project ?? null, hash: hash(key).toString('hex'), createdAt: new Date().toISOString() });
       await save();
@@ -66,16 +66,16 @@ export async function openAccess(data, onChange = () => {}) {
     },
     deny(id) {
       const r = requests.get(id);
-      if (!r || r.status !== 'pending') throw new Problem('Запрос уже не ждёт ответа.', 409);
+      if (!r || r.status !== 'pending') throw new Problem('The request is no longer waiting for an answer.', 409);
       r.status = 'denied'; onChange();
     },
     async revoke(id) {
       const before = devices.length;
       devices = devices.filter(d => d.id !== id);
-      if (devices.length === before) throw new Problem('Такой машины нет.', 404);
+      if (devices.length === before) throw new Problem('No such machine.', 404);
       await save(); onChange();
     },
-    // Машина по ключу; заодно — когда она была в последний раз.
+    // The machine by its key; also records when it was last seen.
     check(key) {
       if (typeof key !== 'string' || !key) return null;
       const h = hash(key), d = devices.find(x => same(Buffer.from(x.hash, 'hex'), h));

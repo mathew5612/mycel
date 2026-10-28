@@ -1,4 +1,4 @@
-/* Mycel — свободная карта. Без сборки: один файл стилей. */
+/* Mycel is a free-form map. No build step: one stylesheet. */
 
 :root {
   color-scheme: light dark;
@@ -49,7 +49,7 @@
   }
 }
 
-/* Базовое */
+/* Base */
 
 * { box-sizing: border-box; }
 html { height: 100%; }
@@ -81,7 +81,7 @@ code, pre { font-family: var(--mono); }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; color: var(--text-3); }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 
-/* Каркас */
+/* Frame */
 
 #app { display: flex; height: 100%; }
 #app > .loading { flex: 1; }
@@ -90,23 +90,23 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .sub-level { position: absolute; left: 10px; top: 4px; font-size: 12px; line-height: 16px; color: var(--text-3); pointer-events: none; }
 .b-text code { font-family: var(--mono); font-size: 12px; padding: 0 3px; border-radius: 4px; background: rgba(127, 127, 127, .16); }
 
-/* Слева чат на всю высоту; справа карта и под ней строка управления */
+/* On the left the chat at full height; on the right the map with the control bar under it */
 
 .work { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* Строка управления переносится на вторую линию, если под картой мало места */
-/* Без выделения текста: протяжка от пустого места строки на ползунок выделяла бы его, и следующее нажатие тянуло бы
-   выделение вместо бегунка */
+/* The control bar wraps onto a second line if there is little room under the map */
+/* No text selection: a drag from an empty spot of the bar onto the slider would select it, and the next press would drag
+   the selection instead of the thumb */
 .dock-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-height: 40px; flex-shrink: 0; padding: 6px 8px; background: var(--surface); border-top: 1px solid var(--line); -webkit-user-select: none; user-select: none; }
 .tabs { display: flex; gap: 2px; }
-/* Первая в строке — кнопка назад к списку проектов с именем проекта */
+/* First in the bar is the button back to the list of projects, with the project's name */
 .back { display: inline-block; max-width: 240px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; font-weight: 600; line-height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .back:hover { background: var(--surface-2); }
 .back + .tabs { margin-left: 2px; padding-left: 8px; border-left: 1px solid var(--line); }
 .tabs button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
 .tabs button:hover { background: var(--surface-2); color: var(--text); }
 .tabs button.active { background: var(--surface-2); color: var(--text); }
-/* Уровень — ползунок: дорожка с делениями, заполненная до выбранного уровня, бегунок нативный, только перекрашен.
-   Деления и заполнение стоят по ходу центра бегунка: от 7 px до ширины минус 7 px. */
+/* The level is a slider: a track with ticks, filled up to the chosen level; the thumb is native, only recoloured.
+   Ticks and fill follow the path of the thumb's centre: from 7 px to the width minus 7 px. */
 .levels { display: flex; align-items: center; gap: 10px; margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--line); }
 .levels:has(#level:disabled) { opacity: .5; }
 .level-track { position: relative; isolation: isolate; width: 112px; height: 28px; }
@@ -117,7 +117,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .level-track i.on { background: var(--accent); }
 .levels.mixed .level-track::after { opacity: 0; }
 .levels.mixed .level-track i.on { background: var(--line-2); }
-/* Бегунок лежит поверх заполнения, иначе линия входит в его белую середину */
+/* The thumb lies above the fill, otherwise the line runs into its white middle */
 #level { position: relative; z-index: 1; display: block; width: 100%; height: 28px; margin: 0; background: none; -webkit-appearance: none; appearance: none; cursor: pointer; }
 #level:disabled { cursor: default; }
 #level:focus-visible { outline: none; }
@@ -127,18 +127,23 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 #level::-moz-range-thumb { box-sizing: border-box; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
 #level:hover::-webkit-slider-thumb { border-color: var(--accent-hover); }
 #level:hover::-moz-range-thumb { border-color: var(--accent-hover); }
-/* Фокус с клавиатуры — такая же рамка, как у остальных кнопок: 2 px акцентом с отступом 2 px */
+/* Keyboard focus is the same outline as on other buttons: 2 px of accent with a 2 px offset */
 #level:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 #level:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .levels.mixed #level::-webkit-slider-thumb { border-color: var(--line-2); }
 .levels.mixed #level::-moz-range-thumb { border-color: var(--line-2); }
-/* Название занимает место самого длинного из них: строка не меняет ширину вместе с уровнем, и в узкой строке
-   ползунок не перескакивает на другую линию, пока его тянут */
+/* The name takes the space of the longest one: the bar does not change width with the level, and in a narrow bar
+   the slider does not jump to another line while it is dragged */
 .level-name { display: grid; font-size: 13px; color: var(--text-2); white-space: nowrap; }
 .level-name > span { grid-area: 1 / 1; }
 .level-name > span:not(#level-name) { visibility: hidden; }
 #status { font-size: 12px; color: var(--warn); margin-right: 4px; white-space: nowrap; }
-/* Фокус на модуле: вне модуля карта скрыта, но остаётся на месте; сверху путь и действия */
+/* Language switch: two quiet words at the right edge, the chosen one in the text colour */
+.lang { display: inline-flex; align-items: center; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.lang button { height: 28px; padding: 0 4px; border-radius: 6px; font-size: 12px; color: var(--text-3); }
+.lang button:hover { color: var(--text); }
+.lang button[aria-pressed="true"] { color: var(--text); font-weight: 600; }
+/* Focus on a module: the map outside the module is hidden but stays in place; the path and actions are on top */
 .block.out-focus { visibility: hidden; }
 .block.out-focus .block:not(.out-focus) { visibility: visible; }
 .focus-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 42px; flex-shrink: 0; padding: 6px 8px 6px 14px; background: var(--surface); border-bottom: 1px solid var(--line); }
@@ -149,7 +154,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .focus-path .ref { font-size: 13px; }
 .focus-bar .btn { height: 28px; }
 
-/* Шкала задания: полоса над строкой управления — шаг, скошенные сегменты в рамке-скобках, процент */
+/* Task progress: a strip above the control bar with the step, slanted segments in bracket frames, the percentage */
 .progress-row { flex-shrink: 0; display: flex; justify-content: center; padding: 7px 16px; background: var(--surface); border-top: 1px solid var(--line); }
 .progress-row[hidden] { display: none; }
 .progress { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 640px; min-width: 0; }
@@ -168,7 +173,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 @keyframes segment { 50% { background: color-mix(in srgb, var(--accent) 55%, var(--line)); } }
 @keyframes sweep { 0%, 70%, 100% { background: var(--line); } 10% { background: var(--accent); } }
 
-/* Агенты в строке управления — точкой: зелёная ждёт действий человека, жёлтая работает; имя — в подсказке */
+/* Agents in the control bar are dots: green waits for the person's actions, yellow is working; the name is in the tooltip */
 .agents { display: inline-flex; gap: 4px; padding: 0 4px; }
 .agents:empty { display: none; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--line-2); }
@@ -179,7 +184,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
 .btn.ghost:hover { background: var(--surface-2); color: var(--text); }
 
-/* Холст */
+/* Canvas */
 
 .viewport {
   position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none;
@@ -188,9 +193,9 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .viewport.panning { cursor: grabbing; }
 .viewport.connecting, .viewport.connecting .block { cursor: crosshair; }
 .world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
-/* Автоматическое вписывание в режиме слежения переезжает плавно */
+/* Automatic fitting in follow mode moves smoothly */
 .world.glide { transition: transform .35s ease; }
-/* Узлы и связи, которые только что пришли с сервера, проявляются */
+/* Nodes and links that just came from the server fade in */
 .block.appear { animation: appear .25s ease-out backwards; }
 .edge-group.appear { animation: fade .25s ease-out backwards; }
 @keyframes appear { from { opacity: 0; transform: scale(.96); } }
@@ -201,7 +206,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .edge-group.related .edge { stroke: var(--text-2); }
 .edge-group.hover .edge, .edge-group.selected .edge { stroke: var(--accent); stroke-width: 2.2; }
 .edge-group.rebinding { opacity: .35; }
-/* Связи из предложения агента: новая — пунктиром, изменённая — цветом, к удалению — бледная */
+/* Links in an agent proposal: a new one is dashed, a changed one coloured, one to be deleted faded */
 .edge-group.pr-add .edge, .edge-group.pr-change .edge { stroke: var(--accent); }
 .edge-group.pr-add .edge { stroke-dasharray: 6 4; }
 .edge-group.pr-remove { opacity: .4; }
@@ -220,7 +225,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 #arrow path { fill: var(--edge); fill: context-stroke; }
 #arrow-selected path { fill: var(--accent); }
 .edge-label-box { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-/* Подпись связи — тихий текст на фоне холста; рамка появляется при наведении и выделении */
+/* A link label is quiet text on the canvas background; the frame appears on hover and selection */
 .edge-label {
   max-width: 100%; padding: 1px 6px; border: 1px solid transparent; border-radius: 999px;
   background: var(--bg); color: var(--text-3); font-size: 11px; line-height: 16px;
@@ -228,14 +233,14 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 }
 .edge-group.hover .edge-label, .edge-group.selected .edge-label { border-color: var(--accent); color: var(--text); }
 
-/* Готовность подкарты — полоска вдоль верхнего края: проверено, проверяется, упало, план (штрихом), без отметки */
+/* Sub-map readiness is a strip along the top edge: passed, testing, failed, plan (hatched), no mark */
 .meter { position: absolute; left: 10px; right: 10px; top: -1px; height: 3px; display: flex; gap: 2px; pointer-events: none; }
 .meter i { min-width: 3px; border-radius: 0 0 2px 2px; background: var(--line-2); }
 .meter .m-passed { background: var(--ok); }
 .meter .m-failed { background: var(--bad); }
 .meter .m-testing { background: var(--run); }
 .meter .m-plan { background: repeating-linear-gradient(90deg, var(--text-3) 0 4px, transparent 4px 7px); }
-/* Издалека (масштаб меньше 55%) — только названия, крупнее; тексты, подписи и надписи прячутся, заметки бледнеют */
+/* From afar (zoom under 55%) only titles, larger; texts, labels and captions hide, notes fade */
 .viewport.far .b-text, .viewport.far .fold-badge, .viewport.far .sub-level, .viewport.far .edge-label-box { visibility: hidden; }
 .viewport.far .block.note { opacity: .35; }
 .viewport.far .block:not(.note) > .b-title, .viewport.far .block > .head > .b-title { font-size: clamp(15px, calc(12px / var(--zoom)), 30px); line-height: 1.15; white-space: normal; height: auto; }
@@ -246,15 +251,15 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
   cursor: grab; transition: box-shadow .12s;
 }
-/* Наведение отмечает только блок под указателем, а не подкарты вокруг него */
+/* Hover marks only the block under the pointer, not the sub-maps around it */
 .block:where(:hover:not(:has(.block:hover))) { border-color: var(--line-2); }
-/* Концепция — рамка чуть заметнее; развёрнутая подкарта — зона без своей рамки (рамку дают отметки, выделение и
-   наведение). Низкая специфичность: отметки и выделение ниже по файлу её перекрывают. */
+/* Concept has a slightly stronger border; an expanded sub-map is a zone without its own border (marks, selection and
+   hover give it one). Low specificity: marks and selection further down the file override it. */
 .block.lv-0 { border-color: var(--line-2); }
 .block:where(.container:not(.collapsed)) { border-color: transparent; }
-/* Отметки блоков — только рамкой, блок не заливается. План — пунктир: логика без готового кода. Идёт проверка — рамка
-   пульсирует. Проверен — зелёная, проверка не прошла — красная; у подкарты, внутри которой что-то проверяется или не
-   прошло, — так же. Смена отметки вспыхивает кольцом (remark), чтобы её было видно во время прогона тестов. */
+/* Block marks are shown only with the border; the block is not filled. Plan is dashed: logic without finished code.
+   Testing makes the border pulse. Passed is green, failed is red; a sub-map with something being tested or failed
+   inside the same. A mark change flashes a ring (remark) so it is visible while tests run. */
 .block.st-plan { border-style: dashed; border-color: var(--text-3); }
 .block.st-passed { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok); --flash: var(--ok); }
 .block.st-failed, .block.failed-inside { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); --flash: var(--bad); }
@@ -262,7 +267,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 @keyframes testing { 0%, 100% { box-shadow: 0 0 0 1px var(--run), 0 0 0 0 var(--run-soft); } 50% { box-shadow: 0 0 0 1px var(--run), 0 0 0 6px var(--run-soft); } }
 .block.remark::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; animation: remark 1.2s ease-out both; animation-delay: var(--remark-delay, 0ms); }
 @keyframes remark { from { box-shadow: 0 0 0 0 var(--flash, var(--accent)); } to { box-shadow: 0 0 0 16px transparent; } }
-/* Предложение агента: новое — пунктиром и подсвечено, изменённое — подсвечено, к удалению — бледное и зачёркнутое. */
+/* Agent proposal: new things are dashed and highlighted, changed things highlighted, things to be deleted faded and struck through. */
 .block.pr-add, .block.pr-change { border-color: var(--accent); box-shadow: inset 0 0 0 999px var(--proposal-soft); }
 .block.container.pr-add, .block.container.pr-change { box-shadow: 0 0 0 1px var(--accent); }
 .block.pr-add { border-style: dashed; }
@@ -271,7 +276,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .block.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .block.drop { border-color: var(--accent); border-style: dashed; }
 .block.editing { cursor: text; user-select: text; }
-/* Заметка — листок с полосой слева, а не яркий квадрат */
+/* A note is a slip with a stripe on the left, not a bright square */
 .block.note { border-radius: 6px; box-shadow: none; border-color: var(--line); border-left: 3px solid var(--note); padding: 10px 12px; }
 .block.note .b-text { color: var(--text-2); font-size: 12.5px; }
 .block.note .b-text-input { color: var(--text); }
@@ -281,7 +286,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .block.c-yellow { background: var(--c-yellow); } .block.c-green { background: var(--c-green); } .block.c-blue { background: var(--c-blue); } .block.c-purple { background: var(--c-purple); }
 .block.note.c-yellow { background: var(--note-bg); }
 .b-title { flex-shrink: 0; max-height: 100%; font-size: 14px; font-weight: 600; line-height: 18px; overflow-wrap: anywhere; overflow: hidden; }
-/* Уровни: название концепции крупнее, текст техники и кода мельче */
+/* Levels: concept titles are larger, technical and code text smaller */
 .block.lv-0 > .b-title, .block.lv-0 > .head > .b-title { font-size: 15px; font-weight: 650; }
 .block.lv-2 > .b-text, .block.lv-3 > .b-text { font-size: 12.5px; }
 .b-title:empty { display: none; }
@@ -291,9 +296,9 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .b-title-input { flex-shrink: 0; font-size: 14px; font-weight: 600; line-height: 18px; }
 .b-text-input { flex: 1; min-height: 0; font-size: 13px; line-height: 18px; color: var(--text-2); }
 
-/* Подкарта: шапка с названием и двумя строками текста, ниже поле с вложенными узлами. Поле прозрачно для указателя,
-   чтобы связи между вложенными блоками оставались доступны; контейнер берётся за шапку целиком. Фон контейнера и поля
-   лежит в нижнем слое, под связями. Свёрнутый контейнер — обычная карточка. */
+/* A sub-map: a header with the title and two lines of text, below it the field with nested nodes. The field lets the
+   pointer through so links between nested blocks stay reachable; the container is grabbed by its whole header. The
+   background of the container and field lies in the bottom layer, under the links. A collapsed container is an ordinary card. */
 .block.container { padding: 0; pointer-events: none; background: transparent; }
 .block.container.collapsed { pointer-events: auto; }
 .block.container > .head { flex: none; display: flex; flex-direction: column; gap: 3px; padding: 10px 36px 0 12px; overflow: hidden; pointer-events: auto; }
@@ -304,8 +309,8 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .block.container::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--surface); pointer-events: none; z-index: -1; }
 .block.container.c-gray::before { background: var(--c-gray); } .block.container.c-red::before { background: var(--c-red); } .block.container.c-orange::before { background: var(--c-orange); }
 .block.container.c-yellow::before { background: var(--c-yellow); } .block.container.c-green::before { background: var(--c-green); } .block.container.c-blue::before { background: var(--c-blue); } .block.container.c-purple::before { background: var(--c-purple); }
-/* Развёрнутая подкарта — зона: полупрозрачный фон и тонкий контур, у вложенных — только контур; поле внутри — ровная
-   подложка без своей сетки точек. Цвет, выбранный человеком, ниже по файлу важнее. */
+/* An expanded sub-map is a zone: a translucent background and a thin outline, nested ones only the outline; the field
+   inside is a plain backing without its own dot grid. A colour chosen by the person, further down the file, wins. */
 .block.container:where(:not(.collapsed))::before { bottom: auto; height: 100%; border-radius: 12px; background: color-mix(in srgb, var(--surface) 55%, transparent); box-shadow: inset 0 0 0 1px var(--line); }
 .block.container:where(:not(.collapsed):not(.lv-0))::before { background: transparent; }
 .block.container:not(.collapsed) > .head > .b-title { font-size: 13px; }
@@ -319,8 +324,8 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .fold:hover { background: var(--surface-2); color: var(--text); }
 .fold-badge { position: absolute; left: 12px; bottom: 10px; max-width: calc(100% - 24px); font-size: 12px; color: var(--text-3); padding: 2px 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fold-badge:hover { color: var(--text); text-decoration: underline; }
-/* Карандаш — правка блока одним нажатием: в правом верхнем углу (у подкарты — левее шеврона), виден при наведении и у
-   выделенного блока, на сенсорном экране — всегда */
+/* The pencil edits a block with one press: in the top right corner (on a sub-map, left of the chevron), visible on hover
+   and on the selected block, always on a touch screen */
 .pen {
   position: absolute; top: 7px; right: 7px; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text-3); opacity: 0; transition: opacity .12s;
@@ -337,8 +342,8 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 }
 .block:hover:not(:has(.block:hover)) > .port, .block.selected > .port { opacity: 1; }
 .block.editing > .port { opacity: 0; pointer-events: none; }
-/* Край блока — тоже начало связи: тонкая полоса по всему контуру, на экране всегда около 6 px; под указателем она
-   подсвечивается. У развёрнутой подкарты — по её рамке. */
+/* A block's edge also starts a link: a thin strip along the whole outline, always about 6 px on screen; it is highlighted
+   under the pointer. On an expanded sub-map it runs along its border. */
 .ez { position: absolute; z-index: 1; cursor: crosshair; border-radius: 3px; --ez: calc(6px / var(--zoom, 1)); }
 .ez-t, .ez-b { left: 0; right: 0; height: var(--ez); }
 .ez-l, .ez-r { top: 0; bottom: 0; width: var(--ez); }
@@ -384,22 +389,22 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .zoom-bar button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 5px; color: var(--text-2); font-size: 16px; }
 .zoom-bar button:hover { background: var(--surface-2); color: var(--text); }
 .zoom-bar span { width: 44px; text-align: center; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-/* «Закончить правки» — внизу посередине карты, пока человек правит; рядом число записей */
+/* "Finish edits" sits at the bottom middle of the map while the person is editing; next to it the number of entries */
 .edits {
   position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 3px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
 }
 .edits .btn { height: 30px; }
 .edits-count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-/* Предложение агента: название, число карточек, «Отклонить» и «Принять» */
+/* Agent proposal: title, number of cards, "Reject" and "Accept" */
 .edits-title { max-width: 320px; padding-left: 8px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* В узкой карте панель встаёт над кнопками масштаба, а не на них */
+/* In a narrow map the panel sits above the zoom buttons, not on them */
 .viewport { container-type: inline-size; }
 @container (max-width: 720px) { .edits { bottom: 60px; max-width: calc(100% - 24px); } .edits-title { min-width: 0; flex: 1; } }
 .edits:has(.edits-title) { padding: 3px; }
 
-/* Код глазами Mycel: над блоком — имя агента, который правит его файлы, и «устарел?», если файлы изменили после
-   описания. Ярлыки не мельчают при отдалении карты. В режиме «Здоровье» под блоком — что с ним не так, здоровые бледнеют. */
+/* Code through Mycel's eyes: above a block, the name of the agent editing its files, and "outdated?" if the files changed
+   after the description. The tags do not shrink when the map is zoomed out. In "Health" mode, what is wrong is under the block, healthy ones fade. */
 .code-row, .health-tag {
   position: absolute; left: 0; display: flex; gap: 4px; white-space: nowrap; z-index: 3; pointer-events: none;
   font-size: max(12px, calc(12px / var(--zoom, 1))); line-height: 1.5;
@@ -423,7 +428,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .health-panel b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
 .health-ok { padding: 4px 8px; font-size: 12px; color: var(--text-3); }
 
-/* Запрос доступа виртуальной машины — сверху посередине, поверх любой страницы; на главной — машины с доступом */
+/* A virtual machine's access request: at the top middle, above any page; on home, the machines with access */
 .access { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; gap: 8px; width: min(560px, calc(100% - 24px)); }
 .access-row { padding: 12px 14px; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .18); }
 .access-text { font-size: 13px; line-height: 1.45; }
@@ -436,7 +441,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .devices ul { list-style: none; margin: 0; padding: 0; }
 .devices li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
 
-/* История */
+/* History */
 
 .page { max-width: 760px; height: 100%; margin: 0 auto; padding: 24px 24px 56px; overflow: auto; }
 .page h1 { font-size: 22px; font-weight: 600; letter-spacing: -.3px; margin-bottom: 16px; }
@@ -448,7 +453,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .h-meta b { font-weight: 500; color: var(--text-2); }
 .h-msg { margin-top: 2px; }
 .history ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-2); }
-/* Ревью картой: что изменилось в устройстве проекта, по концепциям */
+/* Review by map: what changed in how the project is built, by concept */
 .review { margin-bottom: 24px; padding: 12px 16px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 .review h2 { font-size: 15px; font-weight: 600; }
@@ -457,7 +462,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .review-marks { margin-top: 10px; font-size: 13px; }
 .review .muted { margin-top: 10px; }
 
-/* Главная: строка для агента и список проектов */
+/* Home: the line for the agent and the list of projects */
 
 .home { flex: 1; min-width: 0; overflow: auto; }
 .home-col { max-width: 760px; margin: 0 auto; padding: 24px 24px 56px; }
@@ -481,7 +486,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 .p-trash:hover { color: var(--danger); }
 @media (hover: none) { .p-trash { opacity: 1; } }
 
-/* Уведомления */
+/* Notifications */
 
 #toast {
   position: fixed; left: 50%; top: 14px; transform: translate(-50%, -12px);
@@ -494,7 +499,7 @@ main { position: relative; flex: 1; min-width: 0; min-height: 0; }
 #toast button { color: var(--accent-soft); font-weight: 500; white-space: nowrap; }
 #toast.error button { color: #fff; }
 
-/* На экране телефона строка управления — в одну линию и прокручивается вбок */
+/* On a phone screen the control bar is one line and scrolls sideways */
 @media (max-width: 520px) {
   .dock-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .dock-bar > * { flex-shrink: 0; }

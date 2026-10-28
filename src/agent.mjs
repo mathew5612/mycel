@@ -1,50 +1,50 @@
-// Встроенный агент Mycel для локальных моделей: любой сервер с OpenAI-совместимым /v1/chat/completions и вызовом
-// функций (Ollama, LM Studio, llama.cpp, vLLM). Модель получает короткую инструкцию, обзор карты, все инструменты Mycel
-// и чтение файлов проекта — отдельный агент-клиент не нужен. Код проекта модель не меняет: только читает и ведёт карту.
+// The built-in Mycel agent for local models: any server with an OpenAI-compatible /v1/chat/completions and function
+// calling (Ollama, LM Studio, llama.cpp, vLLM). The model gets a short guide, an overview of the map, all Mycel tools and
+// reading of the project files: no separate agent client is needed. The model does not change the project code: it only reads it and keeps the map.
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve, isAbsolute, basename } from 'node:path';
 import { createInterface } from 'node:readline';
 import { tools as mycelTools, schema, runTool, toolResult } from './tools.mjs';
 
-// tool_choice не передаётся: Ollama его не поддерживает, а «auto» и так по умолчанию.
+// tool_choice is not sent: Ollama does not support it, and "auto" is the default anyway.
 const ROUNDS = 24;
 const secret = name => /^\.env|\.(pem|key|p12|pfx|crt)$|^id_(rsa|ed25519|ecdsa)/i.test(name);
 const skip = new Set(['node_modules', '.git', '.mycel', '.kontur', 'dist', 'build', 'coverage', '.next', '.venv', 'venv', '__pycache__']);
 const text = description => ({ type: 'string', description });
 
-// Чтение папки проекта: только внутри неё; .env, ключи и сертификаты не открываются, двоичные и большие файлы — тоже.
+// Reading the project folder: only inside it; .env, keys and certificates are not opened, and neither are binary and large files.
 export function fileTools(root) {
   const inside = path => {
     const full = resolve(root, path || '.'), rel = relative(root, full);
-    if (rel.startsWith('..') || isAbsolute(rel)) throw new Error('Путь вне папки проекта.');
+    if (rel.startsWith('..') || isAbsolute(rel)) throw new Error('The path is outside the project folder.');
     return full;
   };
   const textOf = async full => {
-    if (secret(basename(full))) throw new Error('Файлы с секретами (.env, ключи, сертификаты) не читаются.');
-    if ((await stat(full)).size > 512 * 1024) throw new Error('Файл больше 512 КБ.');
+    if (secret(basename(full))) throw new Error('Files with secrets (.env, keys, certificates) are not read.');
+    if ((await stat(full)).size > 512 * 1024) throw new Error('The file is larger than 512 KB.');
     const body = await readFile(full, 'utf8');
-    if (body.slice(0, 8000).includes('\u0000')) throw new Error('Двоичный файл.');
+    if (body.slice(0, 8000).includes('\u0000')) throw new Error('Binary file.');
     return body;
   };
   return [
-    { name: 'list_files', description: 'Список файлов и папок проекта (папка — с / на конце). Без зависимостей, сборки и .git.',
-      properties: { path: text('папка от корня проекта, по умолчанию корень') },
+    { name: 'list_files', description: 'List the files and folders of the project (a folder ends with /). Without dependencies, build output and .git.',
+      properties: { path: text('a folder from the project root, the root by default') },
       async run(a) {
         const items = await readdir(inside(a.path), { withFileTypes: true });
-        return items.filter(i => !skip.has(i.name)).map(i => i.isDirectory() ? `${i.name}/` : i.name).sort().join('\n') || '(пусто)';
+        return items.filter(i => !skip.has(i.name)).map(i => i.isDirectory() ? `${i.name}/` : i.name).sort().join('\n') || '(empty)';
       } },
-    { name: 'read_file', description: 'Прочитать файл проекта с номерами строк (по 400 строк; дальше — from).',
-      properties: { path: text('файл от корня проекта'), from: { type: 'number', description: 'с какой строки, по умолчанию 1' }, lines: { type: 'number', description: 'сколько строк, до 2000' } },
+    { name: 'read_file', description: 'Read a project file with line numbers (400 lines at a time; for more, use from).',
+      properties: { path: text('a file from the project root'), from: { type: 'number', description: 'the line to start from, 1 by default' }, lines: { type: 'number', description: 'how many lines, up to 2000' } },
       async run(a) {
         const all = (await textOf(inside(a.path))).split(/\r?\n/), from = Math.max(1, Math.floor(a.from || 1)), count = Math.min(Math.max(1, Math.floor(a.lines || 400)), 2000);
         const end = from - 1 + count;
-        return all.slice(from - 1, end).map((line, i) => `${from + i}: ${line}`).join('\n') + (end < all.length ? `\n… ещё ${all.length - end} строк (from: ${end + 1})` : '');
+        return all.slice(from - 1, end).map((line, i) => `${from + i}: ${line}`).join('\n') + (end < all.length ? `\n… ${all.length - end} more lines (from: ${end + 1})` : '');
       } },
-    { name: 'search_files', description: 'Найти строки по регулярному выражению в файлах проекта (до 100 совпадений).',
-      properties: { pattern: text('регулярное выражение'), path: text('папка от корня проекта, по умолчанию корень') },
+    { name: 'search_files', description: 'Find lines matching a regular expression in the project files (up to 100 matches).',
+      properties: { pattern: text('a regular expression'), path: text('a folder from the project root, the root by default') },
       async run(a) {
         let re;
-        try { re = new RegExp(a.pattern, 'i'); } catch (e) { throw new Error(`Не регулярное выражение: ${e.message}`); }
+        try { re = new RegExp(a.pattern, 'i'); } catch (e) { throw new Error(`Not a regular expression: ${e.message}`); }
         const found = [], walk = async (dir, depth) => {
           for (const item of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
             if (found.length >= 100 || skip.has(item.name)) continue;
@@ -55,12 +55,12 @@ export function fileTools(root) {
           }
         };
         await walk(inside(a.path), 0);
-        return found.join('\n') || 'Ничего не нашлось.';
+        return found.join('\n') || 'Nothing found.';
       } }
   ];
 }
 
-// Описания для модели: все инструменты Mycel, кроме долгого ожидания (в разговоре оно не нужно), и чтение файлов.
+// Descriptions for the model: all Mycel tools except the long wait (a conversation does not need it), and file reading.
 export function chatTools(root) {
   const mine = mycelTools.filter(t => t.name !== 'mycel_wait'), files = fileTools(root);
   return {
@@ -69,27 +69,27 @@ export function chatTools(root) {
   };
 }
 
-// Разговор: строка человека → ответы модели и вызовы инструментов, пока модель не ответит текстом (до 24 шагов). После
-// ответа — напоминание описать блоки, файлы которых отмечены изменёнными (как хук Stop плагина), один раз.
+// A conversation: the person's line → the model's answers and tool calls until the model answers with text (up to 24 steps).
+// After the answer, a reminder to describe the blocks whose files are marked changed (like the plugin's Stop hook), once.
 export async function runChat({ base, model, key, actor, cwd, system, prompt, env, afterTurn, log = line => process.stderr.write(`${line}\n`), say = line => process.stdout.write(`${line}\n`) }) {
   const { defs, find } = chatTools(cwd), url = `${base.replace(/\/+$/, '')}/chat/completions`;
   const messages = [{ role: 'system', content: system }];
   const complete = async () => {
     const res = await fetch(url, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, key ? { Authorization: `Bearer ${key}` } : {}),
       body: JSON.stringify({ model, messages, tools: defs, temperature: 0.2 }), signal: AbortSignal.timeout(600e3) });
-    if (!res.ok) throw new Error(`Модель ответила ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) throw new Error(`The model answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const message = (await res.json()).choices?.[0]?.message;
-    if (!message) throw new Error('Модель ничего не вернула.');
+    if (!message) throw new Error('The model returned nothing.');
     return message;
   };
   const call = async c => {
     const tool = find(c.function?.name);
-    if (!tool) return `Нет инструмента ${c.function?.name}.`;
+    if (!tool) return `No tool ${c.function?.name}.`;
     let args = {};
     try { args = c.function.arguments ? (typeof c.function.arguments === 'string' ? JSON.parse(c.function.arguments) : c.function.arguments) : {}; }
-    catch { return 'Аргументы — не JSON: повтори вызов с корректным JSON.'; }
+    catch { return 'The arguments are not JSON: repeat the call with valid JSON.'; }
     log(`→ ${tool.name}${args.path ? ` ${args.path}` : args.ids ? ` ${args.ids.join(',')}` : ''}`);
-    if (tool.run) { try { return await tool.run(args); } catch (e) { return `Ошибка: ${e.message}`; } }
+    if (tool.run) { try { return await tool.run(args); } catch (e) { return `Error: ${e.message}`; } }
     return toolResult(tool, await runTool(tool, args, { cwd, actor, env })).text;
   };
   const turn = async line => {
@@ -108,11 +108,11 @@ export async function runChat({ base, model, key, actor, cwd, system, prompt, en
       reminded = true;
       messages.push({ role: 'user', content: reminder });
     }
-    log(`Остановился: больше ${ROUNDS} шагов подряд.`);
+    log(`Stopped: more than ${ROUNDS} steps in a row.`);
   };
   if (prompt) return turn(prompt);
   const rl = createInterface({ input: process.stdin, terminal: Boolean(process.stdin.isTTY) });
-  say('Пиши задачу; пустая строка или «выход» — закончить.');
+  say('Type a task; an empty line or "exit" ends the conversation.');
   for await (const line of rl) {
     if (!line.trim() || /^(выход|exit|quit)$/i.test(line.trim())) break;
     try { await turn(line); } catch (e) { log(e.message); }

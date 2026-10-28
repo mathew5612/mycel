@@ -1,21 +1,21 @@
-// Mycel — свободная карта: блоки с текстом, заметки-стикеры, подкарты внутри блоков, связи между блоками.
+// Mycel is a free-form map: blocks with text, sticky notes, sub-maps inside blocks, links between blocks.
 
 const $ = (q, root = document) => root.querySelector(q);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-// Текст блока: `так` выделяется как код — имена функций и файлов на уровне кода.
+// Block text: `this` is shown as code, for function and file names on the code level.
 const fmt = value => esc(value).replace(/`([^`\n]+)`/g, '<code>$1</code>');
 const COLORS = ['', 'gray', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
-const COLOR_NAMES = { '': 'Без цвета', gray: 'Серый', red: 'Красный', orange: 'Оранжевый', yellow: 'Жёлтый', green: 'Зелёный', blue: 'Синий', purple: 'Фиолетовый' };
+const COLOR_NAMES = { '': 'No colour', gray: 'Grey', red: 'Red', orange: 'Orange', yellow: 'Yellow', green: 'Green', blue: 'Blue', purple: 'Purple' };
 const SIZE = { block: { w: 220, h: 110 }, note: { w: 160, h: 120 } };
-// Нижний предел — чтобы «Показать всё» вмещала и большую карту, построенную агентом по проекту.
+// The lower limit lets "Show all" fit even a large map that an agent built from a project.
 const ZOOM = { min: 0.1, max: 2.5 };
-// Геометрия подкарты; src/layout.mjs повторяет её для авторасстановки на сервере.
-const PAD = 12;                       // внутренний отступ подкарты
-const EDGE = 1;                       // рамка блока: поле подкарты отсчитывается внутри неё
-const HEAD = { base: 36, text: 39 };  // высота шапки контейнера: строка названия, плюс две строки текста
-const FOLDED = { w: 280, h: 30 };     // свёрнутая подкарта: ширина не больше, высота под надпись «N блоков внутри»
-const ROOM = { w: 520, h: 300 };      // поле, которое блок сразу получает, когда в нём появляется подкарта
-const SPOT = 24;                      // отступ нового узла от края поля и от соседей
+// Sub-map geometry; src/layout.mjs repeats it for automatic placement on the server.
+const PAD = 12;                       // inner padding of a sub-map
+const EDGE = 1;                       // block border: the sub-map field is measured inside it
+const HEAD = { base: 36, text: 39 };  // container header height: the title line, plus two lines of text
+const FOLDED = { w: 280, h: 30 };     // collapsed sub-map: width at most this, height for the "N blocks inside" label
+const ROOM = { w: 520, h: 300 };      // the field a block gets at once when a sub-map appears in it
+const SPOT = 24;                      // gap of a new node from the field edge and from its neighbours
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 const contains = (a, b) => b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h;
@@ -34,56 +34,80 @@ const icons = {
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
   pen: '<path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/>'
 };
-// Уровни абстракции задаются вложенностью: концепция — основная карта, механика — подкарты её блоков, техника —
-// подкарты механики, код — глубже.
-const LEVELS = ['Концепция', 'Механика', 'Техника', 'Код'];
+// Abstraction levels come from nesting: concept is the main map, mechanics the sub-maps of its blocks, technical the
+// sub-maps of mechanics, code deeper.
+const LEVELS = ['Concept', 'Mechanics', 'Technical', 'Code'];
 const icon = (name, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 
-// Хранилище браузера: настройки общие для вкладок (localStorage), погружение — своё у вкладки и переживает
-// перезагрузку (sessionStorage).
+// Browser storage: settings are shared by tabs (localStorage), a dive belongs to its tab and survives a reload
+// (sessionStorage).
 const storage = kind => ({
   get(key) { try { return window[kind].getItem(key); } catch { return null; } },
-  set(key, value) { try { window[kind].setItem(key, value); } catch { /* приватный режим */ } },
-  del(key) { try { window[kind].removeItem(key); } catch { /* приватный режим */ } }
+  set(key, value) { try { window[kind].setItem(key, value); } catch { /* private mode */ } },
+  del(key) { try { window[kind].removeItem(key); } catch { /* private mode */ } }
 });
 const prefs = storage('localStorage'), tabPrefs = storage('sessionStorage');
+
+// Interface language. English text is the source: t() looks it up in the Russian dictionary (RU, at the end of the
+// file) when Russian is chosen, and a missing entry stays English. {name} in the text is replaced with values.name.
+// A key may start with a context, "[project] Undo", when one English text needs two Russian ones; it is not shown.
+const LANGS = ['en', 'ru'], LANG_NAMES = { en: 'English', ru: 'Russian' }, LANG_KEY = 'mycel.lang';
+// A choice made with the switch wins; without it, Russian for a browser set to Russian, otherwise English.
+function pickLang() {
+  const saved = prefs.get(LANG_KEY);
+  if (LANGS.includes(saved)) return saved;
+  return /^ru(-|$)/i.test(navigator.languages?.[0] || navigator.language || '') ? 'ru' : 'en';
+}
+let lang = pickLang();
+document.documentElement.lang = lang;
+function t(text, values) {
+  const s = lang === 'ru' && typeof RU[text] === 'string' ? RU[text] : text.replace(/^\[\w+\] /, '');
+  return values ? s.replace(/\{(\w+)\}/g, (m, k) => k in values ? String(values[k]) : m) : s;
+}
+// A number with a word: English one/other; the Russian entry of the other form lists one, few and many.
+function plural(n, one, other) {
+  const forms = lang === 'ru' ? RU[other] : null, a = Math.abs(n) % 100, b = a % 10;
+  return (Array.isArray(forms) ? forms[a > 10 && a < 20 ? 2 : b > 1 && b < 5 ? 1 : b === 1 ? 0 : 2] : n === 1 ? one : other).replace('{n}', n);
+}
+// Dates in the locale of the interface language: the browser's own variant of it (en-GB, ru-RU), if it has one.
+const locale = () => [...(navigator.languages ?? []), navigator.language].find(l => l?.toLowerCase().split('-')[0] === lang) ?? lang;
 
 const state = {
   graph: null, session: null, tab: 'map', view: null,
   selected: null,      // { type: 'node' | 'edge', id }
-  editing: null,       // id узла, который редактируется
-  fresh: new Map(),    // узлы, созданные локально и ещё не сохранённые: id → { edgeId }
-  connectFrom: null,   // режим «связать»: id исходного блока
-  rebind: null,        // режим «перенести конец связи»: { edgeId, end: 'source' | 'target' }
-  hoverEdge: null,     // связь под курсором: у неё видны ручки и крестик
-  pointer: { x: -1, y: -1 }, // последнее положение указателя на экране
-  gesture: null,       // текущее перетаскивание
-  menu: null,          // открытое контекстное меню
-  agents: [],          // агенты, которые обращались к проекту: ждёт ли, когда был
-  activity: [],        // что агенты делают сейчас: { actor, text, progress, at }
-  work: [],            // кто над какими блоками работает: { actor, blocks, files, at }
-  code: { stale: {}, risks: {} }, // устаревшие блоки (их файлы изменили после описания) и риски из mycel health
-  health: false,       // режим «Здоровье»: на карте видно, что с блоками не так
-  reviewHours: 24,     // за сколько часов сводка «Что изменилось» в истории
-  access: { pending: [], devices: [], projects: [] }, // запросы доступа виртуальных машин и машины с доступом
-  edit: null,          // правки человека, которые он ещё не закончил: { since, at, count }
-  focus: null, focusView: null, focusSince: null, // модуль в фокусе, вид карты до фокуса и время входа в него
-  focusFolds: new Map(), // сворачивание, которое поменяли погружения: id → каким было до фокуса
-  walking: 0,          // сколько переходов по уровням ещё идёт или ждёт очереди
-  level: 0,            // уровень, выбранный ползунком последним; переход по уровням его забывает
-  appeared: new Map(), // узлы и связи, пришедшие по SSE: id → время появления, для анимации
-  remarked: new Map(), // блоки, чья отметка сменилась по SSE: id → время, для вспышки
-  follow: false,       // слежение: карта сама вписывается под изменения, пока человек не двигал вид
-  followIds: null,     // узлы, к верхним блокам которых карта вписалась в последний раз, когда целиком была бы мельче 40%
-  online: true, busy: 0, pending: false, // busy — сколько записей человека ещё идёт
-  loading: false, wanted: 0 // запрос карты по SSE уже идёт; ревизия, до которой нужно дочитать
+  editing: null,       // id of the node being edited
+  fresh: new Map(),    // nodes created locally and not saved yet: id → { edgeId }
+  connectFrom: null,   // "link" mode: id of the source block
+  rebind: null,        // "move a link end" mode: { edgeId, end: 'source' | 'target' }
+  hoverEdge: null,     // the link under the cursor: its handles and cross are shown
+  pointer: { x: -1, y: -1 }, // last pointer position on screen
+  gesture: null,       // the current drag
+  menu: null,          // the open context menu
+  agents: [],          // agents that have used the project: whether waiting, when last seen
+  activity: [],        // what agents are doing now: { actor, text, progress, at }
+  work: [],            // who works on which blocks: { actor, blocks, files, at }
+  code: { stale: {}, risks: {} }, // outdated blocks (their files changed after the description) and risks from mycel health
+  health: false,       // "Health" mode: the map shows what is wrong with blocks
+  reviewHours: 24,     // how many hours the "What changed" summary in History covers
+  access: { pending: [], devices: [], projects: [] }, // access requests of virtual machines and machines with access
+  edit: null,          // the person's edits not finished yet: { since, at, count }
+  focus: null, focusView: null, focusSince: null, // the module in focus, the map view before focus and when it began
+  focusFolds: new Map(), // collapsing changed by dives: id → what it was before focus
+  walking: 0,          // how many level moves are still running or queued
+  level: 0,            // the level last chosen with the slider; a level move forgets it
+  appeared: new Map(), // nodes and links that came over SSE: id → time of appearance, for the animation
+  remarked: new Map(), // blocks whose mark changed over SSE: id → time, for the flash
+  follow: false,       // following: the map fits itself to changes until the person moves the view
+  followIds: null,     // nodes whose top blocks the map last fitted to, when the whole map would be under 40%
+  online: true, busy: 0, pending: false, // busy is how many writes of the person are still running
+  loading: false, wanted: 0 // a map request for SSE is already running; the revision to read up to
 };
-// Открытый экран: главная или проект. gen растёт при каждом переходе — ответы, пришедшие после ухода, отбрасываются.
+// The open screen: home or a project. gen grows on every move; answers that arrive after leaving are dropped.
 const page = { gen: 0, kind: null, id: null, prefix: '', name: '', events: null, gone: false };
-// Главная: список проектов, запрос в полёте и строки, которые сейчас проявляются.
-// held — список не перерисован, пока был нажат указатель.
+// Home: the list of projects, the request in flight and the rows that are appearing now.
+// held means the list was not redrawn while the pointer was pressed.
 const home = { projects: null, timer: 0, loading: false, again: false, held: false, appeared: new Map() };
-// Ответ пришёл уже на другом экране: результат отбрасывается молча.
+// The answer arrived on another screen: the result is dropped silently.
 class Stale extends Error {}
 const node = id => state.graph.nodes.find(n => n.id === id);
 const edgeOf = id => state.graph.edges.find(e => e.id === id);
@@ -92,22 +116,21 @@ const notesOf = id => state.graph.nodes.filter(n => n.type === 'note' && n.attac
 const isNote = n => n?.type === 'note';
 const isContainer = n => n && !isNote(n) && childrenOf(n.id).length > 0;
 const blockEl = id => document.querySelector(`.block[data-id="${CSS.escape(id)}"]`);
-// Название и текст узла; у контейнера они лежат в шапке.
+// Title and text of a node; a container keeps them in its header.
 const part = (el, cls) => el?.querySelector(`:scope > .${cls}, :scope > .head > .${cls}`);
-// Короткое имя: название или первая строка текста, обрезанная по слову с многоточием (как в src/model.mjs).
+// A short name: the title or the first line of the text, cut at a word with an ellipsis (as in src/model.mjs).
 function shorten(line, max = 40) {
   if (line.length <= max) return line;
   const cut = line.slice(0, max), space = cut.lastIndexOf(' ');
   return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
-const nodeName = n => n.title.trim() || shorten(n.text.trim().split('\n')[0]) || (isNote(n) ? 'пустая заметка' : 'без названия');
-const date = value => new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
-const plural = (n, forms) => { const a = Math.abs(n) % 100, b = a % 10; return `${n} ${forms[a > 10 && a < 20 ? 2 : b > 1 && b < 5 ? 1 : b === 1 ? 0 : 2]}`; };
+const nodeName = n => n.title.trim() || shorten(n.text.trim().split('\n')[0]) || (isNote(n) ? t('empty note') : t('untitled'));
+const date = value => new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 
 function toast(message, options = {}) {
   const el = $('#toast'), gen = page.gen;
   el.innerHTML = `<span>${esc(message)}</span>${options.action ? `<button type="button" id="toast-action">${esc(options.action)}</button>` : ''}`;
-  // Действие относится к экрану, где появилось уведомление: после перехода кнопка ничего не делает.
+  // The action belongs to the screen where the notification appeared: after a move the button does nothing.
   if (options.action) $('#toast-action').onclick = () => { el.className = ''; if (gen === page.gen) options.run(); };
   el.className = `visible${options.error ? ' error' : ''}`;
   clearTimeout(toast.timer);
@@ -115,39 +138,39 @@ function toast(message, options = {}) {
 }
 function hideToast() { clearTimeout(toast.timer); $('#toast').className = ''; }
 const fail = err => { if (!(err instanceof Stale)) toast(err.message || String(err), { error: true }); };
-// Изменение не сохранилось: показываем ошибку и перечитываем карту, чтобы локальное состояние не расходилось с сервером.
+// A change was not saved: show the error and re-read the map so the local state does not drift from the server.
 async function recover(err) {
   if (err instanceof Stale) return;
   fail(err);
   if (page.kind !== 'project' || !state.graph) return;
-  try { await refresh(); renderMap(); } catch { /* сервер недоступен: карта обновится по SSE */ }
+  try { await refresh(); renderMap(); } catch { /* the server is unreachable: the map updates over SSE */ }
 }
 
-// Токен мог смениться, пока страница открыта: сессия перечитывается один раз на все запросы, получившие 401.
+// The token may change while the page is open: the session is re-read once for all requests that got a 401.
 let sessionLoad = null;
 const loadSession = () => sessionLoad ??= api('/api/session').then(s => { state.session = s; }).finally(() => { sessionLoad = null; });
 async function api(path, body, retry = true) {
   let res;
   try { res = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.session?.token}` }, body: JSON.stringify(body) } : {}); }
-  catch { throw new Error('Нет связи с сервером.'); }
+  catch { throw new Error(t('No connection to the server.')); }
   if (res.status === 401 && retry) { await loadSession(); return api(path, body, false); }
   const value = await res.json().catch(() => ({}));
-  if (!res.ok) { const error = new Error(value.error || `Ошибка сервера: ${res.status}`); error.status = res.status; error.deleted = value.deleted; throw error; }
+  if (!res.ok) { const error = new Error(value.error || t('Server error: {status}', { status: res.status })); error.status = res.status; error.deleted = value.deleted; throw error; }
   return value;
 }
-// Запрос к открытому проекту: префикс берётся в момент вызова, ответ потом сверяется с поколением экрана.
+// A request to the open project: the prefix is taken at call time, the answer is then checked against the screen generation.
 const papi = (path, body) => api(page.prefix + path, body);
 
-// Геометрия уровней. Координаты узла относительны его уровню: у вложенного — полю подкарты родителя.
-// Развёрнутый контейнер растёт под содержимое: шапка сверху, поле подкарты с отступом PAD.
+// Level geometry. Node coordinates are relative to its level: for a nested node, to the parent's sub-map field.
+// An expanded container grows to fit its content: the header on top, the sub-map field with PAD padding.
 
 let sizes = new Map();
-// Подкарты, внутри которых есть блок с непрошедшей или идущей проверкой, и готовность подкарт — сколько блоков внутри
-// с каждой отметкой. Считается при каждой отрисовке карты.
+// Sub-maps that contain a block with a failed or running check, and sub-map readiness: how many blocks inside have
+// each mark. Computed on every map render.
 let failedIn = new Set(), testingIn = new Set(), tally = new Map();
-// Пока контейнер редактируется, шапка вмещает поле текста, даже если текст пуст.
+// While a container is being edited, its header holds the text field, even if the text is empty.
 const headerH = n => HEAD.base + (n.text.trim() || state.editing === n.id ? HEAD.text : 0);
-// В фокусе видны только блок фокуса, всё внутри него и его заметки; остальная карта скрыта, но остаётся на месте.
+// In focus only the focus block, everything inside it and its notes are visible; the rest of the map is hidden but stays in place.
 let focusIds = null;
 function visible(n) {
   if (focusIds && !focusIds.has(n.id)) return false;
@@ -155,13 +178,13 @@ function visible(n) {
   return true;
 }
 const edgeShown = e => { const a = e && node(e.source), b = e && node(e.target); return Boolean(a && b && visible(a) && visible(b)); };
-// Место, которое занимает развёрнутая подкарта: вложенные узлы, отступы поля, шапка и рамка.
+// The space an expanded sub-map takes: nested nodes, field padding, header and border.
 function contentSize(n) {
   let right = 0, bottom = 0;
   for (const k of childrenOf(n.id)) { const ks = layoutSize(k); right = Math.max(right, k.x + ks.w); bottom = Math.max(bottom, k.y + ks.h); }
   return { w: right + 2 * PAD + 2 * EDGE, h: headerH(n) + bottom + PAD + 2 * EDGE };
 }
-// Развёрнутая подкарта хранит свой размер (w, h) и не бывает меньше содержимого; свёрнутая — компактная карточка.
+// An expanded sub-map keeps its size (w, h) and is never smaller than its content; a collapsed one is a compact card.
 function layoutSize(n) {
   if (sizes.has(n.id)) return sizes.get(n.id);
   let size = { w: n.w, h: n.h };
@@ -172,7 +195,7 @@ function layoutSize(n) {
   sizes.set(n.id, size);
   return size;
 }
-// Контейнеры по цепочке вверх от id, которым тесно, растут под содержимое; возвращает операции, чтобы размер сохранился.
+// Containers up the chain from id that are too tight grow to fit their content; returns operations so the size is saved.
 function growOps(id) {
   const ops = [];
   sizes = new Map();
@@ -186,7 +209,7 @@ function growOps(id) {
   }
   return ops;
 }
-// Свободное место в поле подкарты: первая позиция сеткой по 20 px, где узел не задевает соседей, иначе — под ними.
+// Free space in a sub-map field: the first position on a 20 px grid where the node does not touch its neighbours, otherwise below them.
 function freeSpot(container, size) {
   sizes = new Map();
   const box = layoutSize(container), w = box.w - 2 * PAD - 2 * EDGE, h = box.h - headerH(container) - PAD - 2 * EDGE;
@@ -202,17 +225,17 @@ function worldRect(n) {
   const o = subOrigin(node(n.parentId));
   return { x: o.x + n.x, y: o.y + n.y, w: size.w, h: size.h };
 }
-// Начало поля подкарты контейнера в мировых координатах и само поле.
+// The origin of a container's sub-map field in world coordinates, and the field itself.
 function subOrigin(container) { const r = worldRect(container); return { x: r.x + EDGE + PAD, y: r.y + EDGE + headerH(container) }; }
 function fieldRect(container) { const r = worldRect(container), o = subOrigin(container); return { x: o.x, y: o.y, w: r.x + r.w - EDGE - PAD - o.x, h: r.y + r.h - EDGE - PAD - o.y }; }
 const depthOf = n => { let d = 0; for (let p = n.parentId; p; p = node(p)?.parentId) d++; return d; };
 
-// Данные
+// Data
 
 function adopt(next) {
   const prev = state.graph;
   state.graph = next;
-  // Локально созданные, ещё не сохранённые узлы и их связи остаются на карте.
+  // Nodes created locally and not saved yet, and their links, stay on the map.
   if (prev) for (const [id, fresh] of state.fresh) {
     const n = prev.nodes.find(x => x.id === id);
     if (n && !node(id)) state.graph.nodes.push(n);
@@ -221,16 +244,16 @@ function adopt(next) {
   }
 }
 async function refresh() { const gen = page.gen, next = await papi('/graph'); if (gen !== page.gen) throw new Stale(); adopt(next); }
-// Нажатые указатели на всей странице. Пока хоть один нажат, живое обновление ждёт: перерисовка заменила бы нажатую
-// строку главной, шеврон или кнопку панели, и клик по ним потерялся бы. Отпускание дорисовывает отложенное.
+// Pointers pressed anywhere on the page. While any is pressed, the live update waits: a redraw would replace the
+// pressed home row, chevron or panel button, and the click on it would be lost. The release draws what was held back.
 const pressed = new Set();
-// Пока идёт жест, ввод, запись или нажат указатель, карту с сервера не подменяем: иначе перетаскиваемый узел или
-// редактор потеряют состояние, а элемент под нажатием — клик.
+// While a gesture, input, write or pressed pointer is in progress, the map from the server is not swapped in: otherwise
+// the dragged node or the editor would lose its state, and the element under the press its click.
 const interacting = () => Boolean(state.gesture || state.editing || state.busy || pressed.size || document.activeElement?.id === 'edge-label');
-// Записи, которые ещё идут: уход с проекта ждёт их, чтобы правка не потерялась на повторе после 409.
+// Writes still running: leaving the project waits for them so an edit is not lost on a retry after 409.
 const saving = new Set();
-// again собирает операции заново по перечитанной после 409 карте (уровень ползунка): повтор прежних не тронул бы
-// подкарты, которые агент добавил, пока ползунок держали.
+// again builds the operations anew from the map re-read after 409 (the slider level): repeating the old ones would not
+// touch sub-maps the agent added while the slider was held.
 function commit(operations, message, again) {
   const job = write(operations, message, again);
   saving.add(job); job.catch(() => {}).finally(() => saving.delete(job));
@@ -250,20 +273,20 @@ async function write(operations, message, again) {
       next = ops.length ? await send(ops) : state.graph;
     }
     if (gen !== page.gen) throw new Stale();
-    // Правка агента, из-за которой запись повторилась, проявляется и вписывается в слежении, как пришедшая по SSE.
+    // The agent edit that caused the retry appears and is fitted in follow mode, as if it came over SSE.
     const ids = prev ? touched(prev, state.graph) : [], added = prev ? markAppeared(prev, state.graph) : 0;
     state.graph = next;
     renderMap();
     if (added && state.follow && state.tab === 'map') autoFit(ids);
     if (state.tab === 'history') await showHistory();
   } catch (err) { throw gen === page.gen ? err : new Stale(); }
-  // Правка агента, пришедшая во время записи, только отмечена: после последней записи карта её дочитывает.
+  // An agent edit that arrived during the write is only noted: after the last write the map reads it.
   finally { if (gen === page.gen && !--state.busy) flushPending(); }
 }
 
-// Каркас и вкладки
+// Frame and tabs
 
-// Карта на всю ширину, под ней строка управления, как в n8n. Чата нет: с агентом говорят в его окне.
+// The map at full width with the control bar under it, as in n8n. There is no chat: people talk to the agent in its window.
 function shell() {
   $('#app').innerHTML = `<div class="work"><div class="focus-bar" id="focus-bar" hidden></div><main id="main"></main>
       <div class="progress-row" id="progress-row" hidden><div class="progress" id="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"></div></div>
@@ -271,7 +294,7 @@ function shell() {
 }
 function setStatus(online) {
   state.online = online;
-  const el = $('#status'); if (el) el.textContent = online ? '' : 'Нет связи с сервером';
+  const el = $('#status'); if (el) el.textContent = online ? '' : t('No connection to the server');
 }
 async function showTab(tab) {
   const gen = page.gen;
@@ -297,42 +320,43 @@ function showMap() {
       <div id="float"></div>
       <div class="menu" id="menu" hidden></div>
       <div class="zoom-bar">
-        <button data-action="zoom-out" aria-label="Уменьшить">−</button><span id="zoom-value">100%</span><button data-action="zoom-in" aria-label="Увеличить">+</button>
-        <button data-action="fit" title="Показать всё" aria-label="Показать всё">${icon('fit', 16)}</button>
+        <button data-action="zoom-out" aria-label="${t('Zoom out')}">−</button><span id="zoom-value">100%</span><button data-action="zoom-in" aria-label="${t('Zoom in')}">+</button>
+        <button data-action="fit" title="${t('Show all')}" aria-label="${t('Show all')}">${icon('fit', 16)}</button>
       </div>
       <div class="edits" id="edits" hidden></div>
     </div>`;
-  // Вьюпорт с overflow: hidden браузер всё равно может прокрутить при фокусе на элементе у края;
-  // тогда картинка разъезжается с координатами. Любую такую прокрутку сбрасываем.
+  // The browser can still scroll a viewport with overflow: hidden when an element at its edge gets focus;
+  // then the picture drifts away from the coordinates. Any such scroll is reset.
   $('#viewport').addEventListener('scroll', e => { e.target.scrollTop = 0; e.target.scrollLeft = 0; });
   renderMap(); renderEdits();
   if (state.view && !state.follow) applyView(); else autoFit(state.followIds, false);
 }
-// Сверху — ревью картой: что изменилось в устройстве проекта по концепциям за час, день или неделю, простыми словами.
-const REVIEW = [[1, 'За час'], [24, 'За день'], [168, 'За неделю']];
+// At the top is the review by map: what changed in how the project is built, by concept, over an hour, a day or a week, in plain words.
+const REVIEW = [[1, 'Last hour'], [24, 'Last day'], [168, 'Last week']];
 async function showHistory() {
   const gen = page.gen, [{ history }, review] = await Promise.all([papi('/history'), papi(`/review?hours=${state.reviewHours}`)]);
   if (gen !== page.gen || state.tab !== 'history') return;
-  const actor = a => a === 'human' ? 'Человек' : a === 'system' ? 'Система' : a;
-  const marks = [review.passed.length && `Проверено: ${review.passed.join(', ')}.`, review.failed.length && `Проверка не прошла: ${review.failed.join(', ')}.`].filter(Boolean).join(' ');
-  const summary = `<section class="review"><div class="review-head"><h2>Что изменилось</h2><nav class="tabs">${REVIEW.map(([h, label]) => `<button type="button" data-review-hours="${h}"${h === state.reviewHours ? ' class="active"' : ''}>${label}</button>`).join('')}</nav></div>
-    ${review.groups.length ? `${review.groups.map(g => `<h3>«${esc(g.title)}»</h3><ul>${g.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`).join('')}${marks ? `<p class="review-marks">${esc(marks)}</p>` : ''}
-      <p class="muted">Записей: ${review.entries}${review.human ? `, ваших: ${review.human}` : ''}${review.agents.length ? `, агенты: ${esc(review.agents.join(', '))}` : ''}.</p>` : '<p class="muted">Устройство проекта за это время не менялось.</p>'}</section>`;
-  $('#main').innerHTML = `<div class="page"><h1>История</h1>${summary}${history.length ? `<ol class="history">${history.map(h => `<li>
-      <div class="h-meta"><b>${esc(actor(h.actor))}</b><span>${date(h.at)}</span><span>ревизия ${h.revision}</span></div>
+  const actor = a => a === 'human' ? t('You') : a === 'system' ? t('System') : a;
+  const marks = [review.passed.length && t('Passed: {list}.', { list: review.passed.join(', ') }), review.failed.length && t('Failed: {list}.', { list: review.failed.join(', ') })].filter(Boolean).join(' ');
+  const counts = [t('Entries: {n}', { n: review.entries }), review.human && t('yours: {n}', { n: review.human }), review.agents.length && t('agents: {list}', { list: review.agents.join(', ') })].filter(Boolean).join(', ');
+  const summary = `<section class="review"><div class="review-head"><h2>${t('What changed')}</h2><nav class="tabs">${REVIEW.map(([h, label]) => `<button type="button" data-review-hours="${h}"${h === state.reviewHours ? ' class="active"' : ''}>${t(label)}</button>`).join('')}</nav></div>
+    ${review.groups.length ? `${review.groups.map(g => `<h3>${esc(t('"{title}"', { title: g.title }))}</h3><ul>${g.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`).join('')}${marks ? `<p class="review-marks">${esc(marks)}</p>` : ''}
+      <p class="muted">${esc(counts)}.</p>` : `<p class="muted">${t('No changes in how the project is built over this period.')}</p>`}</section>`;
+  $('#main').innerHTML = `<div class="page"><h1>${t('History')}</h1>${summary}${history.length ? `<ol class="history">${history.map(h => `<li>
+      <div class="h-meta"><b>${esc(actor(h.actor))}</b><span>${date(h.at)}</span><span>${t('revision {n}', { n: h.revision })}</span></div>
       <div class="h-msg">${esc(h.message)}</div>
       ${h.changes.length > 1 || (h.changes[0] && h.changes[0] !== h.message) ? `<ul>${h.changes.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
-    </li>`).join('')}</ol>` : '<p class="muted">Изменений пока нет.</p>'}</div>`;
+    </li>`).join('')}</ol>` : `<p class="muted">${t('No changes yet.')}</p>`}</div>`;
 }
 
-// Карта
+// Map
 
 function renderMap() {
   const blocks = $('#blocks'); if (!blocks) return;
   sizes = new Map();
   if (state.focus && !node(state.focus)) state.focus = null;
   focusIds = state.focus ? focusSet(state.focus) : null;
-  // Выделение снимается и с узла или связи, скрытых в свёрнутой подкарте: иначе панель и клавиши работали бы с невидимым.
+  // The selection is also cleared from a node or link hidden in a collapsed sub-map: otherwise the panel and keys would act on something invisible.
   const s = state.selected;
   if (s && !(s.type === 'node' ? node(s.id) && visible(node(s.id)) : edgeShown(edgeOf(s.id)))) state.selected = null;
   if (state.editing && !node(state.editing)) state.editing = null;
@@ -342,54 +366,54 @@ function renderMap() {
     const inside = n.status === 'failed' ? failedIn : n.status === 'testing' ? testingIn : null;
     if (inside) for (let p = node(n.parentId); p && !inside.has(p.id); p = node(p.parentId)) inside.add(p.id);
     if (!isNote(n)) for (let p = node(n.parentId); p; p = node(p.parentId)) {
-      const t = tally.get(p.id) ?? { plan: 0, testing: 0, passed: 0, failed: 0, none: 0 };
-      t[n.status ?? 'none']++; tally.set(p.id, t);
+      const c = tally.get(p.id) ?? { plan: 0, testing: 0, passed: 0, failed: 0, none: 0 };
+      c[n.status ?? 'none']++; tally.set(p.id, c);
     }
   }
   blocks.innerHTML = levelHtml(null);
-  // Блок, который правят, ушёл в свёрнутую подкарту: правка сохраняется, а не висит без поля и не держит обновление.
+  // The block being edited went into a collapsed sub-map: the edit is saved instead of hanging without a field and holding the update.
   if (state.editing && !blockEl(state.editing)) finishEdit(editor);
   else if (state.editing) mountEditor(state.editing, editor?.focus ?? 'title', editor);
-  for (const el of blocks.querySelectorAll('.block')) { const t = part(el, 'b-text'); if (t && t.scrollHeight > t.clientHeight + 1) el.classList.add('clipped'); }
+  for (const el of blocks.querySelectorAll('.block')) { const text = part(el, 'b-text'); if (text && text.scrollHeight > text.clientHeight + 1) el.classList.add('clipped'); }
   renderLevels(); renderFocus(); renderEdits(); reportSelection();
   drawEdges(); renderFloat(); syncHover(); paintCode();
 }
-// Узлы одного уровня: сначала контейнеры, затем блоки, затем заметки. Что позже в разметке, то выше на экране:
-// блок, положенный на подкарту, не уходит под её шапку и содержимое, а заметки лежат поверх всего.
+// Nodes of one level: containers first, then blocks, then notes. What comes later in the markup is higher on screen:
+// a block laid on a sub-map does not go under its header and content, and notes lie on top of everything.
 function levelHtml(parentId) {
   const level = state.graph.nodes.filter(n => n.parentId === parentId), blocks = level.filter(n => !isNote(n));
   return [...blocks.filter(n => isContainer(n)), ...blocks.filter(n => !isContainer(n)), ...level.filter(isNote)].map(blockHtml).join('');
 }
-// Готовность подкарты — полоска вдоль верхнего края: сколько блоков внутри проверено, проверяется, упало, в плане и без
-// отметки. Нет ни одной отметки внутри — нет и полоски.
+// Sub-map readiness is a strip along the top edge: how many blocks inside passed, are being tested, failed, are planned
+// and have no mark. No mark inside at all means no strip.
 const METER = ['passed', 'testing', 'failed', 'plan', 'none'];
 function meterHtml(n) {
-  const t = tally.get(n.id); if (!t || !(t.plan + t.testing + t.passed + t.failed)) return '';
-  const total = METER.reduce((sum, k) => sum + t[k], 0);
-  return `<div class="meter" title="Проверено ${t.passed} из ${total}">${METER.filter(k => t[k]).map(k => `<i class="m-${k}" style="flex:${t[k]}"></i>`).join('')}</div>`;
+  const c = tally.get(n.id); if (!c || !(c.plan + c.testing + c.passed + c.failed)) return '';
+  const total = METER.reduce((sum, k) => sum + c[k], 0);
+  return `<div class="meter" title="${esc(t('Passed {passed} of {total}', { passed: c.passed, total }))}">${METER.filter(k => c[k]).map(k => `<i class="m-${k}" style="flex:${c[k]}"></i>`).join('')}</div>`;
 }
 function blockHtml(n) {
   const size = layoutSize(n), selected = state.selected?.type === 'node' && state.selected.id === n.id;
   const container = isContainer(n), kids = container ? childrenOf(n.id) : [], blocksIn = kids.filter(c => !isNote(c)).length;
-  // Надпись свёрнутой подкарты: «3 блока внутри», «1 заметка внутри», «2 блока, 1 заметка внутри».
-  const inside = [blocksIn && plural(blocksIn, ['блок', 'блока', 'блоков']), kids.length > blocksIn && plural(kids.length - blocksIn, ['заметка', 'заметки', 'заметок'])].filter(Boolean).join(', ');
+  // The label of a collapsed sub-map: "3 blocks inside", "1 note inside", "2 blocks, 1 note inside".
+  const inside = [blocksIn && plural(blocksIn, '{n} block', '{n} blocks'), kids.length > blocksIn && plural(kids.length - blocksIn, '{n} note', '{n} notes')].filter(Boolean).join(', ');
   const age = appearing(n.id);
-  // Отметка (план — пунктир, идёт проверка — пульсирует, проверен — зелёный, проверка не прошла — красный; подкарта, внутри
-  // которой что-то проверяется или не прошло, — так же), вспышка только что сменившейся отметки и пометка предложения агента.
+  // The mark (plan is dashed, testing pulses, passed is green, failed is red; a sub-map with something being tested or
+  // failed inside the same), the flash of a mark that just changed, and the agent proposal tag.
   const flash = remarking(n.id);
   const classes = ['block', `lv-${Math.min(depthOf(n), 3)}`, isNote(n) && 'note', n.color && `c-${n.color}`, selected && 'selected', container && 'container', container && n.collapsed && 'collapsed', focusIds && !focusIds.has(n.id) && 'out-focus', age !== null && 'appear',
     n.status && `st-${n.status}`, n.status !== 'failed' && failedIn.has(n.id) && 'failed-inside', n.status !== 'testing' && testingIn.has(n.id) && 'testing-inside', flash !== null && 'remark', n.proposed && `pr-${n.proposed}`].filter(Boolean).join(' ');
-  // Файлы блока и команда его проверки — подсказкой у названия: на карте их место занимает смысл.
-  const code = [n.files && `Файлы: ${n.files.join(', ')}`, n.test && `Проверка: ${n.test}`].filter(Boolean).join('\n');
+  // The block's files and its check command are a tooltip on the title: on the map their place goes to the meaning.
+  const code = [n.files && t('Files: {files}', { files: n.files.join(', ') }), n.test && t('Check: {test}', { test: n.test })].filter(Boolean).join('\n');
   const head = `${isNote(n) ? '' : `<div class="b-title"${code ? ` title="${esc(code)}"` : ''}>${esc(n.title)}</div>`}<div class="b-text">${fmt(n.text)}</div>`;
   return `<div class="${classes}" data-id="${esc(n.id)}" style="left:${n.x}px;top:${n.y}px;width:${size.w}px;height:${size.h}px${age !== null ? `;animation-delay:-${age}ms` : ''}${flash !== null ? `;--remark-delay:-${flash}ms` : ''}" tabindex="0" aria-label="${esc(nodeName(n))}">
       ${container ? `<div class="head" style="height:${headerH(n)}px">${head}</div>` : head}
-      ${container ? `<button type="button" class="fold" data-fold title="${n.collapsed ? 'Развернуть подкарту' : 'Свернуть подкарту'}" aria-label="${n.collapsed ? 'Развернуть' : 'Свернуть'}">${icon(n.collapsed ? 'right' : 'down', 15)}</button>` : ''}
-      ${container && n.collapsed ? `<button type="button" class="fold-badge" data-fold>${inside} внутри</button>` : ''}
-      ${isNote(n) ? '' : `<button type="button" class="pen" data-pen tabindex="-1" title="Изменить" aria-label="Изменить блок">${icon('pen', 14)}</button>`}
+      ${container ? `<button type="button" class="fold" data-fold title="${n.collapsed ? t('Expand sub-map') : t('Collapse sub-map')}" aria-label="${n.collapsed ? t('Expand') : t('Collapse')}">${icon(n.collapsed ? 'right' : 'down', 15)}</button>` : ''}
+      ${container && n.collapsed ? `<button type="button" class="fold-badge" data-fold>${esc(t('{list} inside', { list: inside }))}</button>` : ''}
+      ${isNote(n) ? '' : `<button type="button" class="pen" data-pen tabindex="-1" title="${t('Edit')}" aria-label="${t('Edit block')}">${icon('pen', 14)}</button>`}
       ${meterHtml(n)}
-      ${container && !n.collapsed ? `<div class="sub" style="top:${headerH(n)}px"><span class="sub-level">${LEVELS[Math.min(depthOf(n) + 1, LEVELS.length - 1)]}</span>${levelHtml(n.id)}</div>` : ''}
-      ${isNote(n) ? '' : '<span class="port" data-port title="Потяните к другому блоку, чтобы связать"></span><span class="ez ez-t" data-port></span><span class="ez ez-r" data-port></span><span class="ez ez-b" data-port></span><span class="ez ez-l" data-port></span>'}${container && n.collapsed ? '' : '<span class="resize" data-resize></span>'}
+      ${container && !n.collapsed ? `<div class="sub" style="top:${headerH(n)}px"><span class="sub-level">${t(LEVELS[Math.min(depthOf(n) + 1, LEVELS.length - 1)])}</span>${levelHtml(n.id)}</div>` : ''}
+      ${isNote(n) ? '' : `<span class="port" data-port title="${t('Drag to another block to link')}"></span><span class="ez ez-t" data-port></span><span class="ez ez-r" data-port></span><span class="ez ez-b" data-port></span><span class="ez ez-l" data-port></span>`}${container && n.collapsed ? '' : '<span class="resize" data-resize></span>'}
     </div>`;
 }
 function edgeGeometry(a, b) {
@@ -398,7 +422,7 @@ function edgeGeometry(a, b) {
   const outer = contains(a, b) ? a : contains(b, a) ? b : null;
   let g;
   if (outer) {
-    // Связь контейнера с его вложенным блоком идёт от ближней к блоку стороны рамки, а не сквозь блок. Сверху шапка, её не пересекаем.
+    // A link between a container and its nested block starts from the side of the border nearest the block, not through the block. The header is on top; it is not crossed.
     const inner = outer === a ? b : a, ic = outer === a ? bc : ac;
     const [, o, i] = [
       [inner.x - outer.x, { x: outer.x, y: ic.y }, { x: inner.x, y: ic.y }],
@@ -419,8 +443,8 @@ function edgeGeometry(a, b) {
   return g;
 }
 const overlaps = (a, b, gap = 12) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
-// Сколько миллисекунд проявляется узел или связь, пришедшие по SSE; null — уже проявились. Перерисовка ставит
-// отрицательную задержку анимации, и она продолжается с того же места, а не начинается заново.
+// How many milliseconds a node or link that came over SSE has been appearing; null means it has appeared. A redraw sets
+// a negative animation delay, so the animation continues from the same point instead of starting over.
 const APPEAR = 250;
 function appearing(id) {
   const t0 = state.appeared.get(id); if (t0 === undefined) return null;
@@ -428,8 +452,8 @@ function appearing(id) {
   if (age < APPEAR) return age;
   state.appeared.delete(id); return null;
 }
-// Отметка блока сменилась по SSE (агент прогоняет тесты): блок вспыхивает кольцом её цвета. Возраст вспышки переживает
-// перерисовки, как у проявления.
+// A block's mark changed over SSE (the agent runs tests): the block flashes a ring of its colour. The flash age survives
+// redraws, as with appearing.
 const REMARK = 1200;
 function remarking(id) {
   const t0 = state.remarked.get(id); if (t0 === undefined) return null;
@@ -448,7 +472,7 @@ function drawEdges() {
       ${e.label ? `<foreignObject x="${g.mx - 110}" y="${g.my - 11}" width="220" height="22"><div xmlns="http://www.w3.org/1999/xhtml" class="edge-label-box"><span class="edge-label">${esc(e.label)}</span></div></foreignObject>` : ''}
     </g>`;
   });
-  // Ниточка от заметки к блоку, если заметку отодвинули от него.
+  // A thread from a note to its block, if the note was moved away from it.
   const leaders = state.graph.nodes.filter(n => isNote(n) && n.attachedTo && visible(n)).map(n => {
     const parent = node(n.attachedTo); if (!parent) return '';
     const a = worldRect(n), b = worldRect(parent);
@@ -457,8 +481,8 @@ function drawEdges() {
   layer.innerHTML = leaders.join('') + edges.join('');
   renderOverlay();
 }
-// Ручки на концах и крестик в середине у связи под курсором или выделенной. Лежат в отдельном слое поверх блоков,
-// иначе блок перекрывает ручку на своей границе. Размер на экране не зависит от масштаба.
+// Handles at the ends and a cross in the middle of the link under the cursor or the selected one. They lie in a separate
+// layer above the blocks, otherwise a block covers the handle on its border. Their size on screen does not depend on zoom.
 function renderOverlay() {
   const layer = $('#handle-layer'); if (!layer) return;
   const ids = new Set([state.hoverEdge, state.selected?.type === 'edge' ? state.selected.id : null, state.gesture?.type === 'rebind' ? state.gesture.edgeId : null].filter(Boolean));
@@ -466,12 +490,12 @@ function renderOverlay() {
   layer.innerHTML = [...ids].map(id => {
     const e = edgeOf(id), a = e && node(e.source), b = e && node(e.target); if (!a || !b || !visible(a) || !visible(b)) return '';
     const g = edgeGeometry(worldRect(a), worldRect(b)), cy = e.label ? g.my - 24 * k : g.my;
-    // Ручки стоят чуть внутрь от концов линии, чтобы не лежать на кружке-порте блока.
+    // The handles sit slightly inward from the line ends so they do not lie on the block's port circle.
     const path = document.querySelector(`.edge-group[data-edge="${CSS.escape(id)}"] .edge`);
     const length = path?.getTotalLength() ?? 0, inset = Math.min(20 * k, length / 3);
     const p1 = path && length ? path.getPointAtLength(inset) : { x: g.x1, y: g.y1 }, p2 = path && length ? path.getPointAtLength(length - inset) : { x: g.x2, y: g.y2 };
-    const handles = [['source', p1], ['target', p2]].map(([end, pt]) => `<circle class="edge-handle" data-handle="${end}" data-edge="${esc(id)}" cx="${pt.x}" cy="${pt.y}" r="${7 * k}"><title>Перетащите на другой блок</title></circle>`).join('');
-    return `${handles}<g class="edge-x" data-edge="${esc(id)}" transform="translate(${g.mx},${cy}) scale(${k})"><title>Удалить связь</title><circle r="10"/><path d="M-3.5 -3.5 3.5 3.5M3.5 -3.5-3.5 3.5"/></g>`;
+    const handles = [['source', p1], ['target', p2]].map(([end, pt]) => `<circle class="edge-handle" data-handle="${end}" data-edge="${esc(id)}" cx="${pt.x}" cy="${pt.y}" r="${7 * k}"><title>${t('Drag onto another block')}</title></circle>`).join('');
+    return `${handles}<g class="edge-x" data-edge="${esc(id)}" transform="translate(${g.mx},${cy}) scale(${k})"><title>${t('Delete link')}</title><circle r="10"/><path d="M-3.5 -3.5 3.5 3.5M3.5 -3.5-3.5 3.5"/></g>`;
   }).join('');
 }
 function hoverEdge(id) {
@@ -482,8 +506,8 @@ function hoverEdge(id) {
   if (id) document.querySelector(`.edge-group[data-edge="${CSS.escape(id)}"]`)?.classList.add('hover');
   renderOverlay();
 }
-// После перерисовки состояние наведения сверяется с реальным положением указателя:
-// браузер сам шлёт pointerover по старой позиции, и без этого ручки могут залипнуть.
+// After a redraw the hover state is checked against the real pointer position:
+// the browser itself sends pointerover for the old position, and without this the handles can get stuck.
 function syncHover() {
   if (state.gesture) return;
   const el = document.elementFromPoint(state.pointer.x, state.pointer.y);
@@ -500,12 +524,12 @@ function renderFloat() {
   if (!state.selected || state.editing) { float.innerHTML = ''; return; }
   if (state.selected.type === 'node') {
     const n = node(state.selected.id);
-    const swatches = COLORS.map(c => `<button type="button" class="swatch${c ? ` c-${c}` : ' none'}${n.color === c ? ' active' : ''}" data-color="${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('');
-    const connect = isNote(n) ? '' : `<button type="button" class="tool" data-action="connect" title="Связать с другим блоком" aria-label="Связать">${icon('link', 15)}</button>`;
-    float.innerHTML = `<div class="tools" id="tools">${swatches}<i class="sep"></i>${connect}<button type="button" class="tool" data-action="delete" title="Удалить" aria-label="Удалить">${icon('trash', 15)}</button></div>`;
+    const swatches = COLORS.map(c => `<button type="button" class="swatch${c ? ` c-${c}` : ' none'}${n.color === c ? ' active' : ''}" data-color="${c}" title="${t(COLOR_NAMES[c])}" aria-label="${t(COLOR_NAMES[c])}"></button>`).join('');
+    const connect = isNote(n) ? '' : `<button type="button" class="tool" data-action="connect" title="${t('Link to another block')}" aria-label="${t('Link')}">${icon('link', 15)}</button>`;
+    float.innerHTML = `<div class="tools" id="tools">${swatches}<i class="sep"></i>${connect}<button type="button" class="tool" data-action="delete" title="${t('Delete')}" aria-label="${t('Delete')}">${icon('trash', 15)}</button></div>`;
   } else {
     const e = edgeOf(state.selected.id);
-    float.innerHTML = `<div class="tools" id="tools"><input id="edge-label" value="${esc(e.label)}" placeholder="Подпись" maxlength="200" aria-label="Подпись связи"><button type="button" class="tool" data-action="swap" title="Сменить направление" aria-label="Сменить направление">${icon('swap', 15)}</button><button type="button" class="tool" data-action="delete" title="Удалить связь" aria-label="Удалить связь">${icon('trash', 15)}</button></div>`;
+    float.innerHTML = `<div class="tools" id="tools"><input id="edge-label" value="${esc(e.label)}" placeholder="${t('Label')}" maxlength="200" aria-label="${t('Link label')}"><button type="button" class="tool" data-action="swap" title="${t('Reverse direction')}" aria-label="${t('Reverse direction')}">${icon('swap', 15)}</button><button type="button" class="tool" data-action="delete" title="${t('Delete link')}" aria-label="${t('Delete link')}">${icon('trash', 15)}</button></div>`;
   }
   positionFloat();
 }
@@ -519,36 +543,36 @@ function positionFloat() {
     const e = edgeOf(state.selected.id), g = edgeGeometry(worldRect(node(e.source)), worldRect(node(e.target))), s = toScreen(g.mx, g.my);
     x = s.x; top = s.y - 14; bottom = s.y + 14;
   }
-  // Панель не выходит за края окна: прижимается по горизонтали, а если сверху нет места — встаёт под узлом.
+  // The panel does not go past the window edges: it is pushed in horizontally, and if there is no room above it goes under the node.
   const w = tools.offsetWidth, h = tools.offsetHeight, below = top - h < 4;
   tools.classList.toggle('below', below);
   tools.style.left = `${clamp(x, w / 2 + 6, Math.max(w / 2 + 6, vp.clientWidth - w / 2 - 6))}px`;
   tools.style.top = `${below ? bottom : top}px`;
 }
 
-// Контекстное меню
+// Context menu
 
 function openMenu(clientX, clientY, target) {
   const menu = $('#menu'), vp = $('#viewport'); if (!menu) return;
   const items = [];
   if (target.type === 'node') {
     const n = node(target.id);
-    if (isNote(n)) { if (n.attachedTo) items.push({ action: 'detach', label: 'Открепить от блока' }); }
+    if (isNote(n)) { if (n.attachedTo) items.push({ action: 'detach', label: 'Detach from block' }); }
     else {
-      items.push(state.focus === n.id ? { action: 'unfocus', label: 'Выйти из фокуса' } : { action: 'open', label: 'Открыть' }, '-');
-      items.push({ action: 'new-inner-block', label: 'Блок внутри' }, { action: 'new-inner-note', label: 'Заметка внутри' });
-      if (isContainer(n)) items.push({ action: 'fold', label: n.collapsed ? 'Развернуть подкарту' : 'Свернуть подкарту' });
-      items.push('-', { action: 'note-for', label: 'Заметка к блоку' }, { action: 'connect', label: 'Связать с…' });
-      // Проверить можно блок, у которого или внутри которого есть команда проверки: запускает её агент.
-      if ([...subtreeOf(n.id)].some(id => node(id)?.test)) items.push({ action: 'check', label: 'Проверить' });
+      items.push(state.focus === n.id ? { action: 'unfocus', label: 'Leave focus' } : { action: 'open', label: 'Open' }, '-');
+      items.push({ action: 'new-inner-block', label: 'Block inside' }, { action: 'new-inner-note', label: 'Note inside' });
+      if (isContainer(n)) items.push({ action: 'fold', label: n.collapsed ? 'Expand sub-map' : 'Collapse sub-map' });
+      items.push('-', { action: 'note-for', label: 'Note on block' }, { action: 'connect', label: 'Link to…' });
+      // A block can be checked if it or something inside it has a check command: the agent runs it.
+      if ([...subtreeOf(n.id)].some(id => node(id)?.test)) items.push({ action: 'check', label: 'Check' });
     }
-    items.push({ action: 'edit', label: isNote(n) ? 'Изменить заметку' : 'Изменить' }, '-', { action: 'delete', label: 'Удалить', danger: true });
+    items.push({ action: 'edit', label: isNote(n) ? 'Edit note' : 'Edit' }, '-', { action: 'delete', label: 'Delete', danger: true });
   } else if (target.type === 'edge') {
-    items.push({ action: 'label', label: 'Подпись' }, { action: 'swap', label: 'Сменить направление' }, { action: 'rebind-source', label: 'Перенести начало на…' }, { action: 'rebind-target', label: 'Перенести конец на…' }, '-', { action: 'delete', label: 'Удалить связь', danger: true });
+    items.push({ action: 'label', label: 'Label' }, { action: 'swap', label: 'Reverse direction' }, { action: 'rebind-source', label: 'Move start to…' }, { action: 'rebind-target', label: 'Move end to…' }, '-', { action: 'delete', label: 'Delete link', danger: true });
   } else {
-    items.push({ action: 'new-block', label: target.container ? 'Блок внутри' : 'Блок' }, { action: 'new-note', label: target.container ? 'Заметка внутри' : 'Заметка' });
+    items.push({ action: 'new-block', label: target.container ? 'Block inside' : 'Block' }, { action: 'new-note', label: target.container ? 'Note inside' : 'Note' });
   }
-  menu.innerHTML = items.map(i => i === '-' ? '<i class="sep"></i>' : `<button type="button" data-menu="${i.action}"${i.danger ? ' class="danger"' : ''}>${esc(i.label)}</button>`).join('');
+  menu.innerHTML = items.map(i => i === '-' ? '<i class="sep"></i>' : `<button type="button" data-menu="${i.action}"${i.danger ? ' class="danger"' : ''}>${esc(t(i.label))}</button>`).join('');
   menu.hidden = false;
   const r = vp.getBoundingClientRect(), x = clamp(clientX - r.left, 4, vp.clientWidth - menu.offsetWidth - 4), y = clamp(clientY - r.top, 4, vp.clientHeight - menu.offsetHeight - 4);
   menu.style.left = `${x}px`; menu.style.top = `${y}px`;
@@ -556,7 +580,7 @@ function openMenu(clientX, clientY, target) {
   menu.querySelector('button')?.focus({ preventScroll: true });
 }
 function closeMenu() { const menu = $('#menu'); if (menu) menu.hidden = true; state.menu = null; }
-// Точка мира → координаты внутри поля подкарты контейнера (не меньше нуля).
+// A world point → coordinates inside a container's sub-map field (not below zero).
 function localIn(container, p) { const o = subOrigin(container); return { x: Math.max(0, p.x - o.x), y: Math.max(0, p.y - o.y) }; }
 async function runMenu(action) {
   const m = state.menu; closeMenu(); if (!m) return;
@@ -573,27 +597,27 @@ async function runMenu(action) {
     case 'unfocus': await walk(exitFocus); break;
     case 'fold': if (n) await toggleFold(n); break;
     case 'note-for': if (n) {
-      // Стикер ложится на правый верхний угол блока. У контейнера там шеврон, а внутри подкарты над блоком может не быть поля, тогда — справа от блока.
+      // The sticker goes on the block's top right corner. A container has its chevron there, and inside a sub-map there may be no field above the block; then it goes to the right of the block.
       const w = layoutSize(n).w, y = n.y - SIZE.note.h + 30, beside = isContainer(n) || (n.parentId && y < 0);
       createNode({ type: 'note', parentId: n.parentId, attachedTo: n.id, x: beside ? n.x + w + 16 : n.x + w - 40, y: beside ? Math.max(0, n.y) : y });
     } break;
     case 'connect': if (n) startConnect(n.id); break;
     case 'check': if (n) {
       await papi('/check', { ids: [n.id] });
-      toast(state.agents.some(a => a.waiting) ? `Агент проверит «${nodeName(n)}»` : `Агента сейчас нет на связи: он увидит просьбу проверить «${nodeName(n)}», когда вернётся`);
+      toast(t(state.agents.some(a => a.waiting) ? 'The agent will check "{name}"' : 'No agent is connected right now: it will see the request to check "{name}" when it comes back', { name: nodeName(n) }));
     } break;
     case 'edit': if (n) startEdit(n.id, isNote(n) ? 'text' : 'title'); break;
-    case 'detach': if (n && n.attachedTo) { n.attachedTo = null; await commit([{ type: 'update-node', id: n.id, patch: { attachedTo: null } }], `Откреплена заметка «${nodeName(n)}»`); } break;
+    case 'detach': if (n && n.attachedTo) { n.attachedTo = null; await commit([{ type: 'update-node', id: n.id, patch: { attachedTo: null } }], t('Detached note "{name}"', { name: nodeName(n) })); } break;
     case 'delete': select(m.target); await deleteSelected(); break;
     case 'label': select(m.target); $('#edge-label')?.focus(); break;
     case 'swap': select(m.target); await swapEdge(); break;
     case 'rebind-source': case 'rebind-target': select(m.target); startRebind(m.target.id, action === 'rebind-source' ? 'source' : 'target'); break;
   }
 }
-// Новый узел внутри блока: свёрнутая подкарта разворачивается, блок без подкарты сразу получает просторное поле
-// (если узел не сохранят, размер вернётся), узел встаёт на свободное место.
+// A new node inside a block: a collapsed sub-map expands, a block without a sub-map gets a roomy field at once
+// (if the node is not saved, the size goes back), the node takes a free spot.
 async function createInside(n, type) {
-  if (n.collapsed) await commit(foldOps([[n, false]]), `Развёрнута подкарта «${nodeName(n)}»`);
+  if (n.collapsed) await commit(foldOps([[n, false]]), t('Expanded sub-map "{name}"', { name: nodeName(n) }));
   let grown = null;
   if (!isContainer(n)) {
     grown = { id: n.id, w: n.w, h: n.h };
@@ -602,27 +626,27 @@ async function createInside(n, type) {
   const spot = freeSpot(n, SIZE[type]);
   createNode({ type, parentId: n.id, x: spot.x, y: spot.y, grown });
 }
-function startConnect(id) { state.connectFrom = id; $('#viewport').classList.add('connecting'); toast('Нажмите на блок, с которым связать'); }
-function startRebind(edgeId, end) { state.rebind = { edgeId, end }; $('#viewport').classList.add('connecting'); toast(end === 'source' ? 'Нажмите на блок, откуда пойдёт связь' : 'Нажмите на блок, куда пойдёт связь'); }
+function startConnect(id) { state.connectFrom = id; $('#viewport').classList.add('connecting'); toast(t('Click the block to link to')); }
+function startRebind(edgeId, end) { state.rebind = { edgeId, end }; $('#viewport').classList.add('connecting'); toast(end === 'source' ? t('Click the block the link should start from') : t('Click the block the link should go to')); }
 function stopConnect() { state.connectFrom = null; state.rebind = null; $('#viewport')?.classList.remove('connecting'); }
-// Переносит начало или конец связи на другой блок. Связь не может замкнуться на себя и не может повторять существующую.
+// Moves the start or end of a link to another block. A link cannot loop back to its own block or repeat an existing one.
 async function rebindEdge(edgeId, end, target) {
   const e = edgeOf(edgeId); if (!e || !target || !node(target) || isNote(node(target))) return;
   const next = { source: e.source, target: e.target, [end]: target };
-  if (next.source === next.target) return toast('Связь не может замыкаться на себя');
+  if (next.source === next.target) return toast(t('A link cannot loop back to its own block'));
   if (e[end] === target) return;
-  if (state.graph.edges.some(x => x.id !== e.id && x.source === next.source && x.target === next.target)) return toast('Такая связь уже есть');
-  await commit([{ type: 'update-edge', id: e.id, patch: { [end]: target } }], 'Перенесена связь');
+  if (state.graph.edges.some(x => x.id !== e.id && x.source === next.source && x.target === next.target)) return toast(t('This link already exists'));
+  await commit([{ type: 'update-edge', id: e.id, patch: { [end]: target } }], t('Moved link'));
   select({ type: 'edge', id: e.id });
 }
 
-// Вид: смещение и масштаб
+// View: offset and zoom
 
 function applyView() {
   const world = $('#world'); if (!world) return;
   world.style.transform = `translate(${state.view.x}px,${state.view.y}px) scale(${state.view.z})`;
   $('#zoom-value').textContent = `${Math.round(state.view.z * 100)}%`;
-  // Масштаб для оформления: издалека (far) на карточках только крупные названия, вблизи — всё.
+  // Zoom for styling: from afar (far) cards show only large titles, up close everything.
   const vp = $('#viewport');
   vp.classList.toggle('far', state.view.z < 0.55);
   vp.style.setProperty('--zoom', state.view.z);
@@ -630,20 +654,20 @@ function applyView() {
   positionFloat();
   saveView();
 }
-// Вид помнится для каждого проекта вместе с режимом слежения.
+// The view is remembered per project together with the follow mode.
 const viewKey = id => `mycel.view.${id}`;
 function saveView() { if (page.id && state.view) prefs.set(viewKey(page.id), JSON.stringify({ x: state.view.x, y: state.view.y, z: state.view.z, follow: state.follow })); }
 function loadView(id) {
   let saved = null;
   try { saved = JSON.parse(prefs.get(viewKey(id))); } catch { saved = null; }
   const ok = Boolean(saved) && [saved.x, saved.y, saved.z].every(Number.isFinite) && saved.z >= ZOOM.min && saved.z <= ZOOM.max;
-  // Карта, которую открывают впервые, следит за изменениями; сохранённый вид помнит, было ли слежение включено.
+  // A map opened for the first time follows changes; a saved view remembers whether following was on.
   state.follow = !ok || saved.follow === true;
   state.view = ok ? { x: saved.x, y: saved.y, z: saved.z } : null;
 }
 function setFollow(on) { if (state.follow !== on) { state.follow = on; saveView(); } }
-// Автоматическое вписывание переезжает плавно. Любое действие человека с видом сначала снимает переезд,
-// чтобы карта на экране совпадала с state.view, который он читает или меняет.
+// Automatic fitting moves smoothly. Any action of the person on the view first stops the move,
+// so the map on screen matches the state.view that the action reads or changes.
 function glide() {
   const world = $('#world'); if (!world) return;
   world.classList.add('glide'); clearTimeout(glide.timer);
@@ -660,7 +684,7 @@ function zoomAt(factor, cx, cy) {
   applyView();
 }
 function zoomCenter(factor) { const r = $('#viewport').getBoundingClientRect(); zoomAt(factor, r.left + r.width / 2, r.top + r.height / 2); }
-// Что вписывает «Показать всё»: в фокусе — модуль вместе с прикреплёнными к нему заметками, иначе вся основная карта.
+// What "Show all" fits: in focus, the module with the notes attached to it, otherwise the whole main map.
 const fitRoots = () => (state.focus ? state.graph.nodes.filter(n => n.id === state.focus || n.attachedTo === state.focus) : state.graph.nodes.filter(n => !n.parentId)).map(worldRect);
 const boxOf = rects => {
   if (!rects.length) return null;
@@ -668,7 +692,7 @@ const boxOf = rects => {
   return { x, y, w: Math.max(...rects.map(r => r.x + r.w)) - x, h: Math.max(...rects.map(r => r.y + r.h)) - y };
 };
 const sameBox = (a, b) => a === b || Boolean(a && b && ['x', 'y', 'w', 'h'].every(k => Math.abs(a[k] - b[k]) < 0.5));
-// Вид, при котором прямоугольник мира целиком виден с полями; крупнее 100% карта не увеличивается.
+// The view in which a world rectangle is fully visible with margins; the map is not zoomed beyond 100%.
 function fitTo(box) {
   const vp = $('#viewport');
   if (!box) return { x: vp.clientWidth / 2, y: vp.clientHeight / 2, z: 1 };
@@ -682,8 +706,8 @@ function fitView() {
   applyView();
 }
 const topOf = id => { let n = node(id); while (n?.parentId) n = node(n.parentId); return n?.id; };
-// Слежение: карта вписывается целиком, а если так она мельче 40% — по верхним блокам, внутри которых
-// добавились или изменились узлы ids (их помним, чтобы так же вписать карту при смене ширины чата).
+// Following: the map is fitted whole, and if that makes it smaller than 40%, to the top blocks inside which the nodes
+// ids were added or changed (they are remembered to fit the map the same way when the chat width changes).
 function autoFit(ids = state.followIds, smooth = true) {
   if (!$('#viewport') || !state.graph) return;
   let view = fitTo(boxOf(fitRoots()));
@@ -696,13 +720,13 @@ function autoFit(ids = state.followIds, smooth = true) {
   state.view = view; applyView();
 }
 
-// Создание, редактирование, удаление
+// Creating, editing, deleting
 
-// grown — прежний размер блока, который ради нового узла стал подкартой и вырос: вернётся, если узел не сохранят.
+// grown is the former size of a block that became a sub-map for the new node and grew: it goes back if the node is not saved.
 function createNode({ type, x, y, parentId = null, attachedTo = null, from = null, grown = null }) {
   if (state.editing) finishEdit();
   const size = SIZE[type];
-  // Новый блок — логика без готового кода: план, пунктиром, пока его не реализуют и не проверят.
+  // A new block is logic without finished code: a plan, dashed, until it is implemented and checked.
   const n = { id: crypto.randomUUID(), type, parentId, attachedTo: type === 'note' ? attachedTo : null, collapsed: false, title: '', text: '', x: Math.round(x), y: Math.round(y), w: size.w, h: size.h, color: type === 'note' ? 'yellow' : '', ...(type === 'block' ? { status: 'plan' } : {}) };
   state.graph.nodes.push(n);
   const fresh = { edgeId: null, grown };
@@ -717,25 +741,25 @@ function startEdit(id, focus = 'title') {
   if (state.editing) finishEdit();
   if (!blockEl(id)) return;
   state.editing = id;
-  // У контейнера на время правки шапка вмещает поле текста и поле подкарты сдвигается вниз: нужна полная перерисовка.
+  // While a container is edited, its header holds the text field and the sub-map field moves down: a full redraw is needed.
   if (isContainer(node(id))) { state.selected = { type: 'node', id }; renderMap(); }
   else select({ type: 'node', id });
   mountEditor(id, focus);
 }
-// Снимок открытого редактора: значения полей и положение курсора, чтобы пережить перерисовку.
+// A snapshot of the open editor: field values and cursor position, to survive a redraw.
 function captureEditor(id) {
   const el = blockEl(id), title = part(el, 'b-title-input'), text = part(el, 'b-text-input');
   if (!text) return null;
   const active = document.activeElement === title ? title : text;
   return { title: title?.value ?? '', text: text.value, focus: active === text ? 'text' : 'title', start: active.selectionStart, end: active.selectionEnd };
 }
-// Повторный вызов на уже открытом редакторе только переводит фокус.
+// A repeated call on an editor already open only moves the focus.
 function mountEditor(id, focus = 'title', saved = null) {
   const n = node(id), el = blockEl(id); if (!n || !el) return;
   el.classList.add('editing');
   const title = part(el, 'b-title'), text = part(el, 'b-text');
-  if (title) title.outerHTML = `<input class="b-title-input" placeholder="Название" maxlength="200" value="${esc(saved ? saved.title : n.title)}" aria-label="Название блока">`;
-  if (text) text.outerHTML = `<textarea class="b-text-input" placeholder="${isNote(n) ? 'Заметка' : 'Текст'}" maxlength="20000" aria-label="Текст">${esc(saved ? saved.text : n.text)}</textarea>`;
+  if (title) title.outerHTML = `<input class="b-title-input" placeholder="${t('Title')}" maxlength="200" value="${esc(saved ? saved.title : n.title)}" aria-label="${t('Block title')}">`;
+  if (text) text.outerHTML = `<textarea class="b-text-input" placeholder="${isNote(n) ? t('Note') : t('Text')}" maxlength="20000" aria-label="${t('Text')}">${esc(saved ? saved.text : n.text)}</textarea>`;
   const target = part(el, focus === 'text' || isNote(n) ? 'b-text-input' : 'b-title-input'); if (!target) return;
   target.focus({ preventScroll: true });
   if (saved) target.setSelectionRange(saved.start, saved.end);
@@ -743,7 +767,7 @@ function mountEditor(id, focus = 'title', saved = null) {
   else target.selectionStart = target.selectionEnd = target.value.length;
   renderFloat();
 }
-// saved — снимок редактора, если его поле уже убрано с карты.
+// saved is the editor snapshot, if its field is already gone from the map.
 async function finishEdit(saved = null) {
   const id = state.editing; if (!id) return;
   state.editing = null;
@@ -765,20 +789,20 @@ async function finishEdit(saved = null) {
         if (e) ops.push({ type: 'add-edge', edge: e });
         const grown = fresh.grown && node(fresh.grown.id);
         if (grown) ops.push({ type: 'update-node', id: grown.id, patch: { w: grown.w, h: grown.h } });
-        await commit([...ops, ...growOps(n.parentId)], `${isNote(n) ? 'Добавлена заметка' : 'Добавлен блок'} «${nodeName(n)}»`);
+        await commit([...ops, ...growOps(n.parentId)], t(isNote(n) ? 'Added note "{name}"' : 'Added block "{name}"', { name: nodeName(n) }));
       }
     } else {
       const patch = {};
       if (title !== n.title) patch.title = title;
       if (text !== n.text) patch.text = text;
       Object.assign(n, patch);
-      if (Object.keys(patch).length) await commit([{ type: 'update-node', id, patch }], `${isNote(n) ? 'Изменена заметка' : 'Изменён блок'} «${nodeName(n)}»`);
+      if (Object.keys(patch).length) await commit([{ type: 'update-node', id, patch }], t(isNote(n) ? 'Changed note "{name}"' : 'Changed block "{name}"', { name: nodeName(n) }));
       else renderMap();
     }
   } catch (err) { await recover(err); }
   await flushPending();
 }
-// Несохранённый узел убирается вместе со своей связью, а выросший ради него блок возвращает прежний размер.
+// An unsaved node is removed together with its link, and the block that grew for it gets its former size back.
 function dropFresh(id, fresh) {
   state.fresh.delete(id);
   state.graph.nodes = state.graph.nodes.filter(x => x.id !== id);
@@ -786,7 +810,7 @@ function dropFresh(id, fresh) {
   const grown = fresh.grown && node(fresh.grown.id);
   if (grown) { grown.w = fresh.grown.w; grown.h = fresh.grown.h; }
 }
-// Узел, всё вложенное в него и заметки, прикреплённые к удаляемым блокам.
+// A node, everything nested in it and the notes attached to the blocks being deleted.
 function subtreeOf(id) {
   const removed = new Set([id]);
   let changed = true;
@@ -798,48 +822,48 @@ async function deleteSelected() {
   try {
     if (s.type === 'edge') {
       const e = edgeOf(s.id); select(null); hoverEdge(null);
-      await commit([{ type: 'delete-edge', id: s.id }], 'Удалена связь');
-      toast('Связь удалена', { action: 'Отменить', run: () => commit([{ type: 'add-edge', edge: e }], 'Восстановлена связь').catch(fail) });
+      await commit([{ type: 'delete-edge', id: s.id }], t('Deleted link'));
+      toast(t('Link deleted'), { action: t('Undo'), run: () => commit([{ type: 'add-edge', edge: e }], t('Restored link')).catch(fail) });
       return;
     }
     const n = node(s.id), removed = subtreeOf(n.id);
     const nodes = state.graph.nodes.filter(x => removed.has(x.id)), edges = state.graph.edges.filter(e => removed.has(e.source) || removed.has(e.target));
     select(null);
     if (state.fresh.has(n.id)) { dropFresh(n.id, state.fresh.get(n.id)); renderMap(); return; }
-    await commit([{ type: 'delete-node', id: n.id }], `${isNote(n) ? 'Удалена заметка' : 'Удалён блок'} «${nodeName(n)}»`);
+    await commit([{ type: 'delete-node', id: n.id }], t(isNote(n) ? 'Deleted note "{name}"' : 'Deleted block "{name}"', { name: nodeName(n) }));
     const restore = [...nodes.map(x => ({ type: 'add-node', node: x })), ...edges.map(e => ({ type: 'add-edge', edge: e }))];
-    toast(isNote(n) ? 'Заметка удалена' : nodes.length > 1 ? 'Блок и его содержимое удалены' : 'Блок удалён', { action: 'Отменить', run: () => commit(restore, `${isNote(n) ? 'Восстановлена заметка' : 'Восстановлен блок'} «${nodeName(n)}»`).catch(fail) });
+    toast(t(isNote(n) ? 'Note deleted' : nodes.length > 1 ? 'Block and its content deleted' : 'Block deleted'), { action: t('Undo'), run: () => commit(restore, t(isNote(n) ? 'Restored note "{name}"' : 'Restored block "{name}"', { name: nodeName(n) })).catch(fail) });
   } catch (err) { fail(err); }
 }
 async function connect(source, target) {
   if (source === target || isNote(node(source)) || isNote(node(target))) return;
-  if (state.graph.edges.some(e => e.source === source && e.target === target)) return toast('Такая связь уже есть');
+  if (state.graph.edges.some(e => e.source === source && e.target === target)) return toast(t('This link already exists'));
   const e = { id: crypto.randomUUID(), source, target, label: '' };
-  await commit([{ type: 'add-edge', edge: e }], 'Добавлена связь');
+  await commit([{ type: 'add-edge', edge: e }], t('Added link'));
   select({ type: 'edge', id: e.id });
 }
 async function swapEdge() {
   const e = edgeOf(state.selected?.id); if (!e) return;
-  if (state.graph.edges.some(x => x.source === e.target && x.target === e.source)) return toast('Встречная связь уже есть');
-  await commit([{ type: 'update-edge', id: e.id, patch: { source: e.target, target: e.source } }], 'Изменено направление связи');
+  if (state.graph.edges.some(x => x.source === e.target && x.target === e.source)) return toast(t('A link in the opposite direction already exists'));
+  await commit([{ type: 'update-edge', id: e.id, patch: { source: e.target, target: e.source } }], t('Reversed link'));
 }
-// Видимый блок под точкой мира с запасом в несколько экранных пикселей от края; заметки не считаются.
-// Из вложенных друг в друга подходит самый глубокий. level ограничивает поиск одним уровнем.
+// The visible block under a world point, with a margin of a few screen pixels from its edge; notes do not count.
+// Of blocks nested in each other the deepest fits. level limits the search to one level.
 function blockNear(p, exclude = null, marginPx = 12, level) {
   const m = marginPx / (state.view?.z ?? 1);
   let found = null, best = -1;
   for (const n of state.graph.nodes) {
     if (isNote(n) || n.id === exclude || !visible(n) || (level !== undefined && n.parentId !== level)) continue;
-    // Запас у края вложенного блока не выходит за поле подкарты: бросок на шапку контейнера достаётся контейнеру при любом масштабе.
+    // The margin at a nested block's edge does not go past the sub-map field: a drop on a container's header goes to the container at any zoom.
     const zone = n.parentId ? clip(grow(worldRect(n), m), fieldRect(node(n.parentId))) : grow(worldRect(n), m), d = depthOf(n);
     if (inRect(p, zone) && d >= best) { found = n.id; best = d; }
   }
   return found;
 }
-// Блок, к которому ляжет связь: тот, внутри которого указатель (из вложенных — самый глубокий, из лежащих друг на друге
-// — верхний: карточка над подкартой, позже нарисованная — над прежней); только если такого нет — ближайший с запасом
-// у края. Так бросок у края нужного блока не достаётся соседу, задетому запасом, а к подкарте, лежащей под блоком,
-// связь ведётся бросом на её видимую часть. Бросок на прикреплённую заметку — связь с её блоком.
+// The block a link will go to: the one the pointer is inside (of nested ones the deepest, of stacked ones the top one: a
+// card above a sub-map, one drawn later above an earlier one); only if there is none, the nearest with a margin at its
+// edge. So a drop at the edge of the right block does not go to a neighbour caught by the margin, and a link to a sub-map
+// lying under a block is made by a drop on its visible part. A drop on an attached note links to its block.
 function linkTarget(p, from) {
   const order = new Map(state.graph.nodes.map((n, i) => [n.id, i]));
   const under = n => n.id !== from && visible(n) && inRect(p, n.parentId ? clip(worldRect(n), fieldRect(node(n.parentId))) : worldRect(n));
@@ -848,8 +872,8 @@ function linkTarget(p, from) {
   const note = state.graph.nodes.find(n => isNote(n) && n.attachedTo && n.attachedTo !== from && under(n));
   return hits[0]?.id ?? note?.attachedTo ?? blockNear(p, from);
 }
-// Развёрнутый контейнер, в поле подкарты которого лежит точка; из вложенных — самый глубокий. skip — перетаскиваемый
-// узел со всем вложенным: в самого себя его не положить.
+// The expanded container whose sub-map field holds the point; of nested ones the deepest. skip is the dragged node with
+// everything nested: it cannot be put into itself.
 function containerAt(p, skip = new Set()) {
   let found = null, best = -1;
   for (const n of state.graph.nodes) {
@@ -860,35 +884,35 @@ function containerAt(p, skip = new Set()) {
   return found;
 }
 const cursorRect = p => ({ x: p.x, y: p.y, w: 0, h: 0 });
-// Превью связи во время протягивания: линия со стрелкой тянется за курсором, а над блоком встаёт так, как ляжет готовая связь.
+// Link preview while dragging: a line with an arrow follows the cursor, and over a block it lies the way the finished link will.
 function showPreview(a, b) { const temp = $('#edge-temp'); if (!temp) return; temp.removeAttribute('hidden'); temp.setAttribute('d', edgeGeometry(a, b).d); }
 function hidePreview() { $('#edge-temp')?.setAttribute('hidden', ''); }
 function markDrop(id) { document.querySelectorAll('.block.drop').forEach(el => el.classList.remove('drop')); if (id) blockEl(id)?.classList.add('drop'); }
-// Подсветка поля подкарты, куда ляжет перетаскиваемый узел.
+// Highlight of the sub-map field where the dragged node will land.
 function markLevel(id) { document.querySelectorAll('.sub.drop-target').forEach(el => el.classList.remove('drop-target')); if (id) blockEl(id)?.querySelector(':scope > .sub')?.classList.add('drop-target'); }
-// Узел и всё, что лежит в его подкарте.
+// A node and everything in its sub-map.
 function nestedIn(id) {
   const inside = new Set([id]);
   for (let changed = true; changed; ) { changed = false; for (const n of state.graph.nodes) if (!inside.has(n.id) && inside.has(n.parentId)) { inside.add(n.id); changed = true; } }
   return inside;
 }
-// Перенос узла на другой уровень: в поле подкарты под указателем или на основную карту. Координаты пересчитываются
-// в систему нового уровня, внутри подкарты — не левее и не выше поля. Прикреплённые заметки сервер переносит вместе
-// с блоком; заметка цепляется к блоку нового уровня, на который её бросили, иначе открепляется.
+// Moving a node to another level: into the sub-map field under the pointer or to the main map. Coordinates are recomputed
+// in the new level's system, inside a sub-map not left of or above the field. The server moves attached notes together
+// with the block; a note attaches to the block of the new level it was dropped on, otherwise it is detached.
 async function moveToLevel(n, target, p) {
   const r = worldRect(n), o = target ? subOrigin(node(target)) : { x: 0, y: 0 };
   const x = target ? Math.max(0, Math.round(r.x - o.x)) : Math.round(r.x), y = target ? Math.max(0, Math.round(r.y - o.y)) : Math.round(r.y);
   const patch = { parentId: target, x, y };
   if (isNote(n)) patch.attachedTo = blockNear(p, n.id, 0, target);
-  // Локально — как сделает сервер, чтобы контейнер вырос под новое содержимое и сохранил размер в той же записи.
+  // Locally, as the server will do it, so the container grows to fit the new content and saves its size in the same write.
   for (const note of notesOf(n.id)) { note.x += x - n.x; note.y += y - n.y; note.parentId = target; }
   Object.assign(n, patch);
-  const where = target ? `в «${nodeName(node(target))}»` : 'на основную карту';
-  await commit([{ type: 'update-node', id: n.id, patch }, ...growOps(target)], `${isNote(n) ? 'Перенесена заметка' : 'Перенесён блок'} «${nodeName(n)}» ${where}`);
+  const where = target ? t('into "{name}"', { name: nodeName(node(target)) }) : t('to the main map');
+  await commit([{ type: 'update-node', id: n.id, patch }, ...growOps(target)], t(isNote(n) ? 'Moved note "{name}" {where}' : 'Moved block "{name}" {where}', { name: nodeName(n), where }));
 }
 async function flushPending() { if (state.pending && !interacting()) { state.pending = false; await liveRefresh(state.wanted); } }
 
-// Указатель: перетаскивание узлов, изменение размера, связи, панорамирование, щипок
+// Pointer: dragging nodes, resizing, links, panning, pinch
 
 const pointers = new Map();
 function onPointerDown(e) {
@@ -903,8 +927,8 @@ function onPointerDown(e) {
   }
   if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
   if (e.target.closest('#tools, #menu, .zoom-bar, #edits, #health, input, textarea, [data-fold], [data-pen]')) return;
-  // Захват указателя на самом узле: тогда pointerup, click и dblclick приходят на него, а не на холст.
-  const capture = el => { try { el.setPointerCapture(e.pointerId); } catch { /* указатель уже отпущен */ } };
+  // Pointer capture on the node itself: then pointerup, click and dblclick come to it, not to the canvas.
+  const capture = el => { try { el.setPointerCapture(e.pointerId); } catch { /* the pointer is already released */ } };
   const blockElement = e.target.closest('.block');
   if (state.connectFrom) {
     const from = state.connectFrom; stopConnect();
@@ -918,8 +942,8 @@ function onPointerDown(e) {
   }
   const cross = e.target.closest('.edge-x');
   if (cross) { select({ type: 'edge', id: cross.dataset.edge }); deleteSelected(); return; }
-  // Связь начинается с края блока (полоса по всему контуру), с кружка-порта или с любого места блока с Alt. Кружок важнее
-  // ручки связи, если они оказались в одной точке; угол изменения размера — важнее края.
+  // A link starts from a block's edge (a strip along the whole outline), from the port circle, or from anywhere on the block
+  // with Alt. The circle wins over a link handle at the same point; the resize corner wins over the edge.
   const resizing = e.target.closest('[data-resize]');
   const portBlock = resizing ? null : e.altKey && blockElement && !isNote(node(blockElement.dataset.id)) ? blockElement
     : (e.target.closest('[data-port]') ?? document.elementsFromPoint(e.clientX, e.clientY).find(el => el.matches?.('.port')))?.closest('.block');
@@ -939,7 +963,7 @@ function onPointerDown(e) {
   if (blockElement && state.editing === blockElement.dataset.id) return;
   if (blockElement && e.target.closest('[data-resize]')) {
     if (state.editing) finishEdit();
-    // Жест начинается от показанного размера: развёрнутая подкарта бывает больше сохранённого.
+    // The gesture starts from the shown size: an expanded sub-map can be larger than the saved one.
     const n = node(blockElement.dataset.id), shown = layoutSize(n);
     state.gesture = { type: 'resize', id: n.id, w: shown.w, h: shown.h, x: e.clientX, y: e.clientY };
     capture(blockElement); return;
@@ -947,7 +971,7 @@ function onPointerDown(e) {
   if (blockElement) {
     if (state.editing) finishEdit();
     const n = node(blockElement.dataset.id);
-    // Прикреплённые заметки едут вместе с блоком одной группой.
+    // Attached notes travel with the block as one group.
     const group = [n, ...(isNote(n) ? [] : notesOf(n.id))].map(x => ({ id: x.id, ox: x.x, oy: x.y }));
     state.gesture = { type: 'drag', id: n.id, x: e.clientX, y: e.clientY, moved: false, group, skip: nestedIn(n.id) };
     capture(blockElement); return;
@@ -961,20 +985,20 @@ function moveNode(id, x, y) {
   const n = node(id), el = blockEl(id); if (!n || !el) return;
   n.x = x; n.y = y; el.style.left = `${x}px`; el.style.top = `${y}px`;
 }
-// Размеры контейнеров зависят от содержимого: после сдвига или растяжения узла пересчитываем их по всей цепочке.
+// Container sizes depend on their content: after a node is moved or resized they are recomputed along the whole chain.
 function relayout() {
   sizes = new Map();
   for (const el of document.querySelectorAll('.block.container')) { const n = node(el.dataset.id); if (!n) continue; const s = layoutSize(n); el.style.width = `${s.w}px`; el.style.height = `${s.h}px`; }
 }
 function onPointerMove(e) {
-  // Отпускание, которого страница не увидела (например, на полосе прокрутки), не держит обновление дольше движения мыши.
+  // A release the page did not see (for example, on a scroll bar) does not hold the update past the next mouse move.
   if (!e.buttons && pressed.delete(e.pointerId) && !pressed.size) released();
   state.pointer = { x: e.clientX, y: e.clientY };
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   const g = state.gesture; if (!g) return;
   const dx = e.clientX - g.x, dy = e.clientY - g.y;
   switch (g.type) {
-    // Человек сам двигает вид или карту — слежение выключается.
+    // The person moves the view or the map: following turns off.
     case 'pan': {
       if (!g.moved && Math.hypot(dx, dy) > 3) { g.moved = true; setFollow(false); }
       state.view.x = g.vx + dx; state.view.y = g.vy + dy; applyView(); break;
@@ -984,10 +1008,10 @@ function onPointerMove(e) {
       if (!g.moved) { g.moved = true; setFollow(false); blockEl(g.id)?.classList.add('dragging'); }
       const n = node(g.id), p = toWorld(e.clientX, e.clientY);
       let level = containerAt(p, g.skip);
-      if (focusIds && !focusIds.has(level)) level = n.parentId; // в фокусе узел не уходит за пределы модуля
+      if (focusIds && !focusIds.has(level)) level = n.parentId; // in focus the node does not leave the module
       let wx = Math.round(dx / state.view.z), wy = Math.round(dy / state.view.z);
-      // Пока указатель над полем своей подкарты, группа не уходит левее и выше поля; сдвиг общий, иначе заметки отстают.
-      // Вне поля узел тянется свободно: отпустите его на основной карте или в другой подкарте, чтобы перенести туда.
+      // While the pointer is over its own sub-map field, the group does not go left of or above the field; the shift is shared, otherwise notes lag behind.
+      // Outside the field the node moves freely: release it on the main map or in another sub-map to move it there.
       if (n.parentId && level === n.parentId) for (const m of g.group) { if (m.ox >= 0) wx = Math.max(wx, -m.ox); if (m.oy >= 0) wy = Math.max(wy, -m.oy); }
       for (const m of g.group) moveNode(m.id, m.ox + wx, m.oy + wy);
       markLevel(level !== n.parentId ? level : null);
@@ -998,7 +1022,7 @@ function onPointerMove(e) {
       const n = node(g.id), el = blockEl(g.id); if (!n || !el) break;
       if (!g.moved && (dx || dy)) { g.moved = true; setFollow(false); }
       n.w = clamp(Math.round(g.w + dx / state.view.z), 120, 20000); n.h = clamp(Math.round(g.h + dy / state.view.z), 60, 20000);
-      // Развёрнутая подкарта не становится меньше содержимого и хранит ровно тот размер, что видно.
+      // An expanded sub-map does not get smaller than its content and keeps exactly the size that is shown.
       if (isContainer(n)) { sizes = new Map(); const c = contentSize(n); n.w = clamp(Math.max(n.w, c.w), 120, 20000); n.h = clamp(Math.max(n.h, c.h), 60, 20000); }
       sizes = new Map(); const s = layoutSize(n);
       el.style.width = `${s.w}px`; el.style.height = `${s.h}px`;
@@ -1027,12 +1051,12 @@ function onPointerMove(e) {
     }
   }
 }
-// Отпущен последний нажатый указатель: главная дорисовывает список уже после клика, карта дочитывает отложенную правку.
+// The last pressed pointer is released: home draws the list after the click, the map reads the held-back edit.
 function released() { if (page.kind === 'home') { if (home.held) setTimeout(renderHome); } else flushPending(); }
 async function onPointerUp(e) {
   pointers.delete(e.pointerId); pressed.delete(e.pointerId);
   const g = state.gesture;
-  // Нажатие без жеста — шеврон, панель, меню, строка главной.
+  // A press without a gesture: chevron, panel, menu, home row.
   if (!g) { if (!pressed.size) released(); return; }
   if (g.type === 'pinch') { if (pointers.size < 2) state.gesture = null; return; }
   state.gesture = null;
@@ -1051,17 +1075,17 @@ async function onPointerUp(e) {
         if (focusIds && !focusIds.has(level)) level = n.parentId;
         if (level !== n.parentId) { await moveToLevel(n, level, p); break; }
         const patch = { x: n.x, y: n.y };
-        let message = `${isNote(n) ? 'Перемещена заметка' : 'Перемещён блок'} «${nodeName(n)}»`;
+        let message = t(isNote(n) ? 'Moved note "{name}"' : 'Moved block "{name}"', { name: nodeName(n) });
         if (isNote(n)) {
-          // Заметка, отпущенная на блоке своего уровня, прикрепляется к нему. Открепить её можно через меню.
+          // A note released on a block of its own level attaches to it. It can be detached from the menu.
           const target = blockNear(p, g.id, 0, n.parentId);
-          if (target && target !== n.attachedTo) { patch.attachedTo = target; n.attachedTo = target; message = `Прикреплена заметка «${nodeName(n)}»`; }
+          if (target && target !== n.attachedTo) { patch.attachedTo = target; n.attachedTo = target; message = t('Attached note "{name}"', { name: nodeName(n) }); }
         }
         await commit([{ type: 'update-node', id: g.id, patch }, ...growOps(n.parentId)], message); break;
       }
       case 'resize': {
         const n = node(g.id); if (!n || state.fresh.has(g.id)) break;
-        await commit([{ type: 'update-node', id: g.id, patch: { w: n.w, h: n.h } }, ...growOps(n.parentId)], `Изменён размер: ${isNote(n) ? 'заметка' : 'блок'} «${nodeName(n)}»`); break;
+        await commit([{ type: 'update-node', id: g.id, patch: { w: n.w, h: n.h } }, ...growOps(n.parentId)], t(isNote(n) ? 'Changed size of note "{name}"' : 'Changed size of block "{name}"', { name: nodeName(n) })); break;
       }
       case 'rebind': {
         hidePreview();
@@ -1073,7 +1097,7 @@ async function onPointerUp(e) {
         break;
       }
       case 'connect': {
-        // Связь появляется только при отпускании на блоке; бросок в пустоту ничего не создаёт.
+        // A link appears only on release over a block; a drop on empty space creates nothing.
         hidePreview();
         const target = linkTarget(toWorld(e.clientX, e.clientY), g.from);
         if (target) await connect(g.from, target);
@@ -1083,7 +1107,7 @@ async function onPointerUp(e) {
   } catch (err) { await recover(err); }
   await flushPending();
 }
-// Наведение на связь (линию, подпись, ручку или крестик) показывает её ручки и крестик.
+// Hovering a link (its line, label, handle or cross) shows its handles and cross.
 document.addEventListener('pointerover', e => {
   const edgeElement = e.target.closest?.('[data-edge]');
   if (edgeElement && !state.gesture) hoverEdge(edgeElement.dataset.edge);
@@ -1095,7 +1119,7 @@ document.addEventListener('pointerout', e => {
   clearTimeout(hoverEdge.timer);
   hoverEdge.timer = setTimeout(() => { if (!state.gesture) hoverEdge(null); }, 150);
 });
-// Наведение на блок подсвечивает его связи.
+// Hovering a block highlights its links.
 document.addEventListener('pointerover', e => {
   const blockElement = e.target.closest?.('.block'); if (!blockElement || state.gesture || !state.graph) return;
   const id = blockElement.dataset.id;
@@ -1104,7 +1128,7 @@ document.addEventListener('pointerover', e => {
 document.addEventListener('pointerout', e => {
   if (e.target.closest?.('.block') && !e.target.closest('.block').contains(e.relatedTarget)) document.querySelectorAll('.edge-group.related').forEach(el => el.classList.remove('related'));
 });
-// Нажатие отмечается раньше всех обработчиков; новое основное нажатие снимает отметки, отпускание которых потерялось.
+// A press is noted before all other handlers; a new primary press clears the presses whose release was lost.
 document.addEventListener('pointerdown', e => { if (e.isPrimary) pressed.clear(); pressed.add(e.pointerId); }, true);
 window.addEventListener('blur', () => { if (pressed.size) { pressed.clear(); released(); } });
 document.addEventListener('pointerdown', onPointerDown);
@@ -1121,15 +1145,15 @@ document.addEventListener('dblclick', e => {
   const vp = $('#viewport'); if (!vp || !vp.contains(e.target)) return;
   if (e.target.closest('#tools, #menu, .zoom-bar, #edits, #health, input, textarea, [data-fold], [data-pen]')) return;
   const blockElement = e.target.closest('.block');
-  // Блок с подкартой открывается — погружение на уровень ниже; блок без подкарты и заметка правятся.
+  // A block with a sub-map opens, diving one level down; a block without a sub-map and a note are edited.
   if (blockElement) {
     const n = node(blockElement.dataset.id); if (!n || state.editing === n.id) return;
     if (isContainer(n)) { walk(() => dive(n.id)); return; }
     const under = document.elementFromPoint(e.clientX, e.clientY); startEdit(n.id, under?.closest('.b-text') || isNote(n) ? 'text' : 'title'); return;
   }
   if (e.target.closest('[data-edge]')) { $('#edge-label')?.focus(); return; }
-  // Пустое место в поле подкарты — часть её блока: погружение в него. Пустое место вне блоков и поле блока, который
-  // уже открыт, — уровень вверх.
+  // Empty space in a sub-map field is part of its block: dive into it. Empty space outside blocks and the field of the
+  // block already open go one level up.
   const inside = containerAt(toWorld(e.clientX, e.clientY));
   if (inside && inside !== state.focus) walk(() => dive(inside)); else if (state.focus) walk(goUp);
 });
@@ -1142,23 +1166,25 @@ document.addEventListener('contextmenu', e => {
   let target;
   if (blockElement) target = { type: 'node', id: blockElement.dataset.id };
   else if (edgeElement) target = { type: 'edge', id: edgeElement.dataset.edge };
-  // В фокусе пустое место — это поле модуля: новый узел ляжет внутрь блока фокуса.
+  // In focus, empty space is the module's field: a new node goes inside the focus block.
   else target = { type: 'canvas', container: containerAt(toWorld(e.clientX, e.clientY)) ?? state.focus };
   if (target.type !== 'canvas') select(target);
   openMenu(e.clientX, e.clientY, target);
 });
 
-// Клики по кнопкам
+// Button clicks
 
 document.addEventListener('click', async e => {
   const control = e.target.closest('button'); if (!control) return;
-  // Главная: строка для агента и корзина у проекта.
+  // The language switch, on home and in the map's control bar.
+  if (control.dataset.lang) return setLang(control.dataset.lang).catch(fail);
+  // Home: the line for the agent and the project's trash button.
   if (control.hasAttribute('data-copy-agent')) return copyAgent().catch(fail);
   if (control.dataset.trash) { control.disabled = true; return deleteProject(control.dataset.trash).catch(err => { control.disabled = false; fail(err); }); }
-  // Запрос доступа виртуальной машины и отключение машины.
+  // A virtual machine's access request and disconnecting a machine.
   if (control.dataset.pairApprove || control.dataset.pairDeny) return answerPair(control, Boolean(control.dataset.pairApprove));
-  if (control.dataset.revoke) { control.disabled = true; return api(`/api/devices/${encodeURIComponent(control.dataset.revoke)}/revoke`, {}).then(info => { setAccess(info); toast('Машина отключена'); }, err => { control.disabled = false; fail(err); }); }
-  // await обязателен: без него ошибка сохранения проходит мимо catch.
+  if (control.dataset.revoke) { control.disabled = true; return api(`/api/devices/${encodeURIComponent(control.dataset.revoke)}/revoke`, {}).then(info => { setAccess(info); toast(t('Machine disconnected')); }, err => { control.disabled = false; fail(err); }); }
+  // await is required: without it a save error slips past the catch.
   try {
     if (control.dataset.menu) return await runMenu(control.dataset.menu);
     if (control.dataset.tab) return await showTab(control.dataset.tab);
@@ -1173,16 +1199,16 @@ document.addEventListener('click', async e => {
       const n = node(control.closest('.block').dataset.id); if (!n) return;
       return await toggleFold(n);
     }
-    // Карандаш в углу блока — правка названия и текста сразу, и у блока с подкартой тоже.
+    // The pencil in a block's corner edits the title and text at once, for a block with a sub-map too.
     if (control.hasAttribute('data-pen')) return startEdit(control.closest('.block').dataset.id, 'title');
     if (control.dataset.color !== undefined && state.selected?.type === 'node') {
       const n = node(state.selected.id); n.color = control.dataset.color;
-      return await commit([{ type: 'update-node', id: n.id, patch: { color: n.color } }], `${isNote(n) ? 'Изменена заметка' : 'Изменён блок'} «${nodeName(n)}»`);
+      return await commit([{ type: 'update-node', id: n.id, patch: { color: n.color } }], t(isNote(n) ? 'Changed note "{name}"' : 'Changed block "{name}"', { name: nodeName(n) }));
     }
     switch (control.dataset.action) {
       case 'zoom-in': zoomCenter(1.2); break;
       case 'zoom-out': zoomCenter(1 / 1.2); break;
-      // «Показать всё» всегда вписывает всю карту и включает слежение.
+      // "Show all" always fits the whole map and turns following on.
       case 'fit': setFollow(true); state.followIds = null; fitView(); break;
       case 'health':
         state.health = !state.health;
@@ -1201,11 +1227,11 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', async e => {
   if (e.target.id === 'edge-label' && state.selected?.type === 'edge') {
     const edge = edgeOf(state.selected.id), label = e.target.value.trim();
-    if (edge && label !== edge.label) { edge.label = label; await commit([{ type: 'update-edge', id: edge.id, patch: { label } }], 'Изменена подпись связи').catch(recover); }
+    if (edge && label !== edge.label) { edge.label = label; await commit([{ type: 'update-edge', id: edge.id, patch: { label } }], t('Changed link label')).catch(recover); }
   }
 });
 document.addEventListener('focusout', e => {
-  if (!e.target.isConnected) return; // поле убрано перерисовкой, а не пользователем
+  if (!e.target.isConnected) return; // the field was removed by a redraw, not by the user
   if (state.editing && e.target.matches('.b-title-input, .b-text-input')) {
     const block = e.target.closest('.block');
     if (!block.contains(e.relatedTarget)) finishEdit();
@@ -1219,8 +1245,8 @@ document.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); buttons[(i + (e.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length]?.focus(); }
     return;
   }
-  // Поле ввода забирает клавиши себе. Ползунок уровня — только стрелки: после щелчка по нему Delete, Enter и Tab
-  // по-прежнему работают с выделенным блоком.
+  // An input field takes the keys for itself. The level slider takes only the arrows: after a click on it Delete, Enter
+  // and Tab still act on the selected block.
   if (e.target.matches('input:not([type="range"]), textarea')) {
     if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); if (state.connectFrom || state.rebind) stopConnect(); return; }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && state.editing) { e.preventDefault(); finishEdit(); return; }
@@ -1229,8 +1255,8 @@ document.addEventListener('keydown', e => {
     return;
   }
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) { e.preventDefault(); deleteSelected(); return; }
-  // Esc заканчивает правку (курсор мог уйти из поля, а правка — остаться), потом снимает выделение, а когда нет ни
-  // правки, ни выделения, — поднимает на уровень вверх.
+  // Esc finishes an edit (the cursor may have left the field while the edit stayed open), then clears the selection, and
+  // when there is neither an edit nor a selection, goes one level up.
   if (e.key === 'Escape') {
     if (state.connectFrom || state.rebind) stopConnect();
     else if (state.editing) { finishEdit(); return; }
@@ -1245,23 +1271,23 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); stopGlide(); setFollow(true); state.followIds = null; fitView(); }
 });
 
-// Уровни: ползунок сворачивает подкарты глубже выбранного уровня и разворачивает остальные.
-// Концепция — свёрнуты все подкарты, механика — видны подкарты основной карты, техника — и подкарты механики,
-// код — развёрнуто всё.
+// Levels: the slider collapses sub-maps deeper than the chosen level and expands the rest.
+// Concept: all sub-maps collapsed; mechanics: the sub-maps of the main map visible; technical: the sub-maps of
+// mechanics too; code: everything expanded.
 
 const foldedAt = (level, n) => level < LEVELS.length && depthOf(n) >= level - 1;
-// Подкарте уровень подходит, если она свёрнута так, как он сворачивает. Подкарты внутри кода — тоже код: «Коду»
-// подходят и свёрнутые, иначе в погружении в технику с подкартами у шагов не горел бы ни один уровень.
+// A level fits a sub-map if the sub-map is collapsed the way the level collapses it. Sub-maps inside code are code too:
+// "Code" fits collapsed ones as well, otherwise in a dive into technical with sub-maps under steps no level would light up.
 const fits = (level, n) => n.collapsed === foldedAt(level, n) || (level === LEVELS.length && depthOf(n) >= LEVELS.length - 1);
-// В погружении ползунок действует только внутри открытого блока: сам он и путь к нему остаются развёрнутыми.
-// Блок считается по текущей карте, а не по последней отрисовке: после 409 её перечитывают до перерисовки.
+// In a dive the slider acts only inside the open block: the block itself and the path to it stay expanded.
+// The block is taken from the current map, not from the last render: after 409 the map is re-read before the redraw.
 const levelContainers = () => {
   const inside = state.focus ? focusSet(state.focus) : null;
   return state.graph.nodes.filter(n => isContainer(n) && (!inside || (inside.has(n.id) && n.id !== state.focus)));
 };
-// Текущий уровень — по видимым подкартам: что лежит внутри свёрнутых, на экране не видно. Если видимому подходят
-// несколько уровней, горит нажатый последним, иначе тот, до которого видна карта (в погружении — уровень блоков
-// внутри открытого блока).
+// The current level comes from the visible sub-maps: what lies inside collapsed ones is not on screen. If several levels
+// fit what is visible, the one pressed last lights up, otherwise the one the map is visible down to (in a dive, the level
+// of the blocks inside the open block).
 const shownLevel = () => Math.min(Math.max(0, ...state.graph.nodes.filter(visible).map(depthOf)) + 1, LEVELS.length);
 function currentLevel() {
   if (!state.graph.nodes.some(isContainer)) return 0;
@@ -1270,16 +1296,16 @@ function currentLevel() {
   const shown = shownLevel();
   return ok(shown) ? shown : 0;
 }
-// Ползунок: деления по уровням, заполнено до выбранного, рядом название. Карте не подходит ни один уровень (подкарты
-// свёрнуты вразнобой шевронами) — бегунок стоит на уровне, до которого видна карта, но тусклый и без названия. Пока
-// бегунок держат мышью или выбранный уровень ещё применяется, он не прыгает от обновлений карты.
+// The slider: ticks for the levels, filled up to the chosen one, its name next to it. If no level fits the map (sub-maps
+// collapsed unevenly with chevrons), the thumb stands at the level the map is visible down to, but dim and without a
+// name. While the thumb is held with the mouse or the chosen level is still being applied, it does not jump on map updates.
 function paintLevel(level) {
   const box = $('#levels'), input = $('#level'); if (!box || !input) return;
   const mixed = box.classList.contains('mixed');
-  input.value = level; input.setAttribute('aria-valuetext', mixed ? 'Подкарты свёрнуты вразнобой' : LEVELS[level - 1]);
+  input.value = level; input.setAttribute('aria-valuetext', mixed ? t('Sub-maps collapsed unevenly') : t(LEVELS[level - 1]));
   box.style.setProperty('--level', (level - 1) / (LEVELS.length - 1));
   box.querySelectorAll('.level-track i').forEach((tick, i) => tick.classList.toggle('on', i < level));
-  $('#level-name').textContent = mixed ? '' : LEVELS[level - 1];
+  $('#level-name').textContent = mixed ? '' : t(LEVELS[level - 1]);
 }
 function renderLevels() {
   const box = $('#levels'), input = $('#level'); if (!box || !input || !state.graph) return;
@@ -1290,9 +1316,9 @@ function renderLevels() {
   box.classList.toggle('mixed', !level && !input.disabled);
   paintLevel(level || shownLevel());
 }
-// Выбор на ползунке встаёт в очередь переходов, как погружения, и шаг применяет уровень, выбранный последним. Пока
-// шаги не прошли, ползунок показывает выбор: перерисовка после записи вернула бы бегунок назад, и следующий шаг,
-// стрелка или щелчок считались бы от старого уровня.
+// A choice on the slider joins the queue of moves, like dives, and the step applies the level chosen last. Until the
+// steps are done, the slider shows the choice: a redraw after a write would move the thumb back, and the next step,
+// arrow or click would count from the old level.
 let picked = 0, picks = 0;
 function pickLevel(level) {
   picked = level; picks++;
@@ -1301,16 +1327,16 @@ function pickLevel(level) {
 async function showLevel(level) {
   state.level = level;
   const ops = () => foldOps(levelContainers().map(n => [n, foldedAt(level, n)])), first = ops();
-  if (first.length) await commit(first, `Показан уровень «${LEVELS[level - 1]}»`, ops); else renderLevels();
+  if (first.length) await commit(first, t('Showed level "{level}"', { level: t(LEVELS[level - 1]) }), ops); else renderLevels();
   fitView();
 }
 
-// Фокус: работа над одним модулем. На карте только он со всем вложенным, сверху путь к нему и действия. Чат показывает
-// разговор о модуле, новые сообщения прикладывают его, агент видит, над чем работает человек.
+// Focus: working on one module. The map shows only it with everything nested, with the path to it and actions on top. The
+// chat shows the conversation about the module, new messages carry it, the agent sees what the person is working on.
 
 const focusSet = id => { const ids = nestedIn(id); for (const n of state.graph.nodes) if (n.attachedTo === id) ids.add(n.id); return ids; };
 const ancestorsOf = n => { const chain = []; for (let p = n.parentId; p; p = node(p)?.parentId) chain.unshift(node(p)); return chain.filter(Boolean); };
-// Переходы по уровням идут по очереди: следующий считается от фокуса, в котором закончился предыдущий.
+// Level moves run in turn: the next one counts from the focus the previous one ended in.
 let travel = Promise.resolve();
 function walk(step) {
   const gen = page.gen;
@@ -1318,9 +1344,9 @@ function walk(step) {
   travel = travel.then(() => gen === page.gen && state.graph ? step() : null).catch(recover).finally(() => { if (gen === page.gen) state.walking--; });
   return travel;
 }
-// Сворачивание одной записью, как у ползунка уровня: агентов оно не будит. Сначала глубокие подкарты, потом
-// внешние — соседи раздвигаются уже под итоговый размер. В фокусе первое изменение каждой подкарты запоминается —
-// и погружением, и ползунком, и шевроном: выход возвращает карту такой, какой она была до фокуса.
+// Collapsing in one write, as with the level slider: it does not wake agents. Deep sub-maps first, then outer ones, so
+// neighbours move apart for the final size. In focus the first change of each sub-map is remembered, whether by a dive,
+// the slider or a chevron: leaving returns the map to how it was before focus.
 function foldOps(list) {
   const ops = list.filter(([x, folded]) => x.collapsed !== folded).sort(([a], [b]) => depthOf(b) - depthOf(a)).map(([x, folded]) => {
     if (state.focus && !state.focusFolds.has(x.id)) state.focusFolds.set(x.id, x.collapsed);
@@ -1329,14 +1355,14 @@ function foldOps(list) {
   if (state.focus && ops.length) saveDive();
   return ops;
 }
-// Шеврон и пункт меню. Сообщение собирается уже после переключения. После 409 операция собирается по перечитанной
-// карте: подкарту, которую агент успел свернуть или развернуть, не переключит обратно повтор прежней.
+// The chevron and the menu item. The message is built after the toggle. After 409 the operation is built from the re-read
+// map: a sub-map the agent has collapsed or expanded meanwhile is not toggled back by repeating the old one.
 function toggleFold(n) {
   const id = n.id, want = !n.collapsed, ops = foldOps([[n, want]]);
-  return commit(ops, `${want ? 'Свёрнута' : 'Развёрнута'} подкарта «${nodeName(n)}»`, () => { const m = node(id); return m && isContainer(m) ? foldOps([[m, want]]) : []; });
+  return commit(ops, t(want ? 'Collapsed sub-map "{name}"' : 'Expanded sub-map "{name}"', { name: nodeName(n) }), () => { const m = node(id); return m && isContainer(m) ? foldOps([[m, want]]) : []; });
 }
-// Что вернёт выход из погружения, помнится и во вкладке: её могут перезагрузить, а запрос при закрытии страницы —
-// не дойти. Тогда сворачивание вернёт следующее открытие проекта в этой вкладке. now — что поставил фокус.
+// What leaving a dive will restore is also remembered in the tab: it may be reloaded, and the request on page close may
+// not get through. Then the next opening of the project in this tab restores the collapsing. now is what focus set.
 const diveKey = id => `mycel.dive.${id}`;
 function saveDive() { tabPrefs.set(diveKey(page.id), JSON.stringify([...state.focusFolds].map(([id, was]) => [id, was, node(id)?.collapsed ?? was]))); }
 function undive(id) {
@@ -1344,20 +1370,20 @@ function undive(id) {
   try { saved = JSON.parse(tabPrefs.get(diveKey(id))); } catch { saved = null; }
   tabPrefs.del(diveKey(id));
   if (!Array.isArray(saved)) return [];
-  // Только подкарты, которые с тех пор никто не менял: запрос при закрытии мог и дойти.
+  // Only sub-maps nobody has changed since: the request on close may have got through after all.
   const back = saved.filter(e => Array.isArray(e) && typeof e[1] === 'boolean' && e[1] !== e[2]).map(([x, was, now]) => [node(x), was, now]);
   return foldOps(back.filter(([x, , now]) => x && isContainer(x) && x.collapsed === now));
 }
-// Снимает фокус; возвращает сборщик операций для одной записи, которые вернут сворачивание, поменянное погружениями.
-// После 409 сборщик вызывается снова по перечитанной карте.
+// Clears the focus; returns a builder of operations for one write that restore the collapsing changed by dives.
+// After 409 the builder is called again on the re-read map.
 function restoreOps() {
   const back = [...state.focusFolds];
   state.focus = null; state.level = 0; state.focusFolds = new Map();
   return () => foldOps(back.map(([id, was]) => [node(id), was]).filter(([x]) => x && isContainer(x)));
 }
-// Погружение в блок: фокус на нём, его подкарта и всё на пути к нему развёрнуто, подкарты его блоков свёрнуты —
-// виден ровно один уровень вниз. Вид плавно переезжает к блоку. Первое погружение запоминает вид карты.
-// Открытая правка сначала сохраняется: свёрнутая подкарта убрала бы её поле.
+// Diving into a block: focus on it, its sub-map and everything on the path to it expanded, the sub-maps of its blocks
+// collapsed, so exactly one level down is visible. The view moves smoothly to the block. The first dive remembers the map view.
+// An open edit is saved first: a collapsed sub-map would remove its field.
 async function dive(id) {
   const gen = page.gen;
   if (state.editing) await finishEdit();
@@ -1366,43 +1392,43 @@ async function dive(id) {
   if (!state.focus) Object.assign(state, { focusView: { ...state.view }, focusSince: new Date().toISOString(), focusFolds: new Map() });
   state.focus = id; state.level = 0;
   select(null);
-  // После 409 — заново по перечитанной карте: подкарты, которые агент добавил в блок, тоже свернутся.
+  // After 409, anew from the re-read map: sub-maps the agent added to the block collapse too.
   const plan = () => { const m = node(id); return m ? foldOps([...childrenOf(id).filter(isContainer).map(k => [k, true]), ...[m, ...ancestorsOf(m)].filter(isContainer).map(x => [x, false])]) : []; };
   const ops = plan();
-  if (ops.length) await commit(ops, `Открыт блок «${nodeName(n)}»`, plan); else renderMap();
+  if (ops.length) await commit(ops, t('Opened block "{name}"', { name: nodeName(n) }), plan); else renderMap();
   glide(); fitView();
   papi('/focus', { id }).catch(() => {});
 }
-// Уровень вверх: открывается блок выше, а с верхнего блока — вся карта.
+// One level up: the block above opens, and from a top block the whole map.
 async function goUp() {
   const n = state.focus && node(state.focus); if (!n) return;
   if (n.parentId && node(n.parentId)) await dive(n.parentId); else await exitFocus();
 }
-// Выход на основную карту: сворачивание, которое поменяли погружения, возвращается одной записью; вид — прежний,
-// а в режиме слежения карта снова вписывается целиком.
+// Back to the main map: the collapsing changed by dives is restored in one write; the view is the former one,
+// and in follow mode the map is fitted whole again.
 async function exitFocus() {
   if (!state.focus) return;
   if (state.editing) await finishEdit();
   const plan = restoreOps(), ops = plan();
   papi('/focus', { id: null }).catch(() => {});
-  if (ops.length) await commit(ops, 'Показана вся карта', plan); else renderMap();
+  if (ops.length) await commit(ops, t('Showed the whole map'), plan); else renderMap();
   tabPrefs.del(diveKey(page.id));
   if (state.follow) autoFit(null);
   else if (state.focusView) { glide(); state.view = state.focusView; applyView(); }
 }
-// Правки человека: первая его запись, которая меняет содержимое карты, начинает их на сервере, и внизу посередине
-// карты появляется «Закончить правки». Пока её не нажали, агент на эти правки не отвечает; кнопка отдаёт их одним
-// сообщением в чате.
-// Пока открыто предложение агента, на месте кнопки — его название и «Отклонить» / «Принять»: решение заканчивает и правки.
+// The person's edits: their first write that changes the map's content starts them on the server, and "Finish edits"
+// appears at the bottom middle of the map. Until it is pressed, the agent does not answer these edits; the button hands
+// them over as one message in the chat.
+// While an agent proposal is open, the button's place holds its title and "Reject" / "Accept": the decision finishes the edits too.
 function renderEdits() {
   const el = $('#edits'); if (!el) return;
   const proposal = state.graph?.proposal, html = proposal
-    ? `<span class="edits-title" title="${esc(proposal.title)}">Предложение «${esc(proposal.title)}»</span><span class="edits-count" title="Карточек в предложении">${state.graph.nodes.filter(n => n.proposed).length}</span><button type="button" class="btn ghost" data-action="proposal-reject">Отклонить</button><button type="button" class="btn" data-action="proposal-accept">Принять</button>`
-    : state.edit ? `<button type="button" class="btn" data-action="edits-done">Закончить правки</button><span class="edits-count" title="Записей с начала правок">${state.edit.count}</span>` : '';
+    ? `<span class="edits-title" title="${esc(proposal.title)}">${esc(t('Proposal "{title}"', { title: proposal.title }))}</span><span class="edits-count" title="${t('Cards in the proposal')}">${state.graph.nodes.filter(n => n.proposed).length}</span><button type="button" class="btn ghost" data-action="proposal-reject">${t('Reject')}</button><button type="button" class="btn" data-action="proposal-accept">${t('Accept')}</button>`
+    : state.edit ? `<button type="button" class="btn" data-action="edits-done">${t('Finish edits')}</button><span class="edits-count" title="${t('Entries since the edits started')}">${state.edit.count}</span>` : '';
   el.hidden = !html;
   if (el.innerHTML !== html) el.innerHTML = html;
 }
-// Решение по предложению агента: принятое остаётся (новое — планом, пунктиром), отклонённое убирается с карты.
+// A decision on an agent proposal: what is accepted stays (new things as a plan, dashed), what is rejected leaves the map.
 async function decideProposal(accept) {
   if (state.editing) await finishEdit();
   await Promise.allSettled([...saving]);
@@ -1410,16 +1436,16 @@ async function decideProposal(accept) {
   if (gen !== page.gen) return;
   if (graph.revision > state.graph.revision) { adopt(graph); renderMap(); }
   state.edit = null; renderEdits();
-  toast(message.proposal.result === 'accepted' ? 'Предложение принято' : 'Предложение отклонено');
+  toast(message.proposal.result === 'accepted' ? t('Proposal accepted') : t('Proposal rejected'));
 }
 async function finishEdits() {
-  // Открытая правка текста и записи, которые ещё идут, — тоже часть правок.
+  // An open text edit and writes still running are part of the edits too.
   if (state.editing) await finishEdit();
   await Promise.allSettled([...saving]);
   const gen = page.gen, { message } = await papi('/edits', {});
   if (gen !== page.gen) return;
   state.edit = null; renderEdits();
-  if (message) toast('Правки переданы агенту');
+  if (message) toast(t('Edits sent to the agent'));
 }
 function renderFocus() {
   const bar = $('#focus-bar'); if (!bar) return;
@@ -1428,33 +1454,36 @@ function renderFocus() {
   $('#app').classList.toggle('focused', Boolean(n));
   if (!n) return;
   const ref = x => `<button type="button" class="ref" data-focus-on="${esc(x.id)}">${esc(nodeName(x))}</button>`;
-  bar.innerHTML = `<nav class="focus-path"><button type="button" class="ref" data-action="unfocus">Карта</button>${ancestorsOf(n).map(a => `<i>›</i>${ref(a)}`).join('')}<i>›</i><b>${esc(nodeName(n))}</b></nav>
+  bar.innerHTML = `<nav class="focus-path"><button type="button" class="ref" data-action="unfocus">${t('Map')}</button>${ancestorsOf(n).map(a => `<i>›</i>${ref(a)}`).join('')}<i>›</i><b>${esc(nodeName(n))}</b></nav>
     <span class="grow"></span>
-    <button type="button" class="btn ghost" data-focus-act="block">Блок внутри</button><button type="button" class="btn ghost" data-focus-act="note">Заметка</button>
-    <button type="button" class="icon-btn" data-action="unfocus" title="Выйти из фокуса" aria-label="Выйти из фокуса">${icon('close', 16)}</button>`;
+    <button type="button" class="btn ghost" data-focus-act="block">${t('Block inside')}</button><button type="button" class="btn ghost" data-focus-act="note">${t('Note')}</button>
+    <button type="button" class="icon-btn" data-action="unfocus" title="${t('Leave focus')}" aria-label="${t('Leave focus')}">${icon('close', 16)}</button>`;
 }
 
-// Агенты. Разговор с агентом идёт в его окне — в Mycel чата нет. Здесь только точка в строке управления (кто на
-// связи: зелёная — ждёт действий человека, жёлтая — работает) и строка над ней — что агент делает сейчас.
+// Agents. The conversation with the agent happens in its window; Mycel has no chat. Here there is only the dot in the
+// control bar (who is connected: green waits for the person's actions, yellow is working) and the line above it: what the agent is doing now.
 
-// Агент на связи, пока ждёт изменений; занят, если обращался за последние 10 минут.
+// An agent is connected while it waits for changes; busy if it made a request in the last 10 minutes.
 function agentState(a) { return a.waiting ? 'on' : Date.now() - new Date(a.lastSeen).getTime() < 600000 ? 'busy' : 'off'; }
 const barHtml = () => `
     <a class="back" href="#/">‹ ${esc(page.name)}</a>
-    <nav class="tabs"><button type="button" data-tab="map" class="active">Карта</button><button type="button" data-tab="history">История</button></nav>
-    <div class="levels" id="levels"><div class="level-track">${LEVELS.map((_, i) => `<i style="left: calc(7px + (100% - 14px) * ${i / (LEVELS.length - 1)})"></i>`).join('')}<input type="range" id="level" min="1" max="${LEVELS.length}" step="1" value="${LEVELS.length}" aria-label="Уровень"></div><span class="level-name"><span id="level-name"></span>${LEVELS.map(name => `<span>${name}</span>`).join('')}</span></div>
-    <nav class="tabs"><button type="button" data-action="health" id="health-toggle" aria-pressed="false" title="Что с блоками не так: не прошли проверку, устарели, без проверки, риски">Здоровье</button></nav>
+    <nav class="tabs"><button type="button" data-tab="map" class="active">${t('Map')}</button><button type="button" data-tab="history">${t('History')}</button></nav>
+    <div class="levels" id="levels"><div class="level-track">${LEVELS.map((_, i) => `<i style="left: calc(7px + (100% - 14px) * ${i / (LEVELS.length - 1)})"></i>`).join('')}<input type="range" id="level" min="1" max="${LEVELS.length}" step="1" value="${LEVELS.length}" aria-label="${t('Level')}"></div><span class="level-name"><span id="level-name"></span>${LEVELS.map(name => `<span>${t(name)}</span>`).join('')}</span></div>
+    <nav class="tabs"><button type="button" data-action="health" id="health-toggle"${state.health ? ' class="active"' : ''} aria-pressed="${state.health}" title="${t('What is wrong with blocks: failed, outdated, unchecked, risks')}">${t('Health')}</button></nav>
     <span class="grow"></span>
     <span id="status" role="status"></span>
     <span class="agents" id="agents"></span>
-    <a class="icon-btn" href="${page.prefix}/export" download title="Скачать карту" aria-label="Скачать карту">${icon('download', 16)}</a>`;
+    <a class="icon-btn" href="${page.prefix}/export" download title="${t('Download map')}" aria-label="${t('Download map')}">${icon('download', 16)}</a>
+    ${langHtml()}`;
+// The language switch: plain EN / RU, the chosen one is marked.
+const langHtml = () => `<nav class="lang" aria-label="${t('Language')}">${LANGS.map(l => `<button type="button" data-lang="${l}" aria-pressed="${l === lang}" aria-label="${t(LANG_NAMES[l])}">${l.toUpperCase()}</button>`).join('<span aria-hidden="true">/</span>')}</nav>`;
 function renderAgents() {
   const el = $('#agents'); if (!el) return;
   el.innerHTML = state.agents.filter(a => agentState(a) !== 'off').map(a => `<i class="dot ${agentState(a)}" title="${esc(a.actor)}"></i>`).join('');
   renderActivity();
 }
-// Что агент делает сейчас: полоса над строкой управления — кто и что, и шкала из сегментов; без процента по шкале
-// бежит отсвет. Агент снимает строку сам, когда закончил.
+// What the agent is doing now: a strip above the control bar with who and what, and a bar of segments; without a
+// percentage a glow runs along the bar. The agent clears the line itself when it is done.
 const SEGMENTS = 20;
 function renderActivity() {
   const el = $('#progress'); if (!el) return;
@@ -1468,27 +1497,27 @@ function renderActivity() {
   el.innerHTML = `<span class="progress-label"><b>${esc(a.actor)}</b> ${esc(a.text)}</span><span class="progress-track">${Array.from({ length: SEGMENTS }, (_, i) =>
     `<i class="${i < filled ? 'on' : i === filled ? 'next' : ''}" style="--i:${i}"></i>`).join('')}</span><span class="progress-value">${known ? `${Math.round(a.progress)}%` : '··'}</span>`;
 }
-// Что человек выделил, хаб узнаёт сразу: агенту «сделай вот это» понятно без чата.
+// The hub learns at once what the person selected: "do this" makes sense to the agent without a chat.
 function reportSelection() {
   const id = state.selected?.type === 'node' && node(state.selected.id) && !state.fresh.has(state.selected.id) ? state.selected.id : null;
   if (id === reportSelection.last || !page.prefix) return;
   reportSelection.last = id;
   papi('/selection', { id }).catch(() => { reportSelection.last = undefined; });
-}// Переход к блоку, который показывает агент (mycel show): свёрнутые подкарты на пути к нему разворачиваются, блок
-// выделяется и встаёт в центр. Блок вне погружения скрыт: тогда открывается блок, в котором он лежит, а блок основной
-// карты — на всей карте.
-// Код глазами Mycel. Над блоком, файлы которого агент правит сейчас, — имя агента (над свёрнутой подкартой, если блок
-// в ней); у блока, чьи файлы изменили после того, как его описали, — «устарел?». Правка гаснет через 2 минуты после
-// последней, блоки из «doing --on» держатся, пока агент их не снял.
+}// Going to the block the agent shows (mycel show): collapsed sub-maps on the path to it expand, the block is selected
+// and centred. A block outside the dive is hidden: then the block it lies in opens, and a main-map block opens on the
+// whole map.
+// Code through Mycel's eyes. Above a block whose files the agent is editing now is the agent's name (above the collapsed
+// sub-map, if the block is in one); a block whose files changed after it was described says "outdated?". An edit fades
+// 2 minutes after the last one, blocks from "doing --on" stay until the agent clears them.
 const EDITING = 2 * 60e3;
 function shownFor(id) { for (let n = node(id); n; n = node(n.parentId)) { const el = blockEl(n.id); if (el) return el; } return null; }
-// Что с блоком не так — для режима «Здоровье»; тот же разбор, что у mycel health.
+// What is wrong with a block, for "Health" mode; the same analysis as mycel health.
 function issuesOf(n) {
   const r = state.code.risks[n.id];
-  return [n.status === 'failed' && ['failed', 'не прошла'], state.code.stale[n.id] && ['stale', 'устарел?'], n.files && !n.test && n.status !== 'passed' && ['untested', 'без проверки'],
-    n.status === 'plan' && ['plan', 'план'], r && (r.todo || r.secrets) && ['risk', [r.todo && `TODO ${r.todo}`, r.secrets && 'ключ?'].filter(Boolean).join(' · ')]].filter(Boolean);
+  return [n.status === 'failed' && ['failed', t('failed')], state.code.stale[n.id] && ['stale', t('outdated?')], n.files && !n.test && n.status !== 'passed' && ['untested', t('unchecked')],
+    n.status === 'plan' && ['plan', t('plan')], r && (r.todo || r.secrets) && ['risk', [r.todo && `TODO ${r.todo}`, r.secrets && t('key?')].filter(Boolean).join(' · ')]].filter(Boolean);
 }
-const HEALTH = [['failed', 'Не прошло'], ['stale', 'Устарело'], ['untested', 'Без проверки'], ['plan', 'План'], ['risk', 'Риски']];
+const HEALTH = [['failed', 'Failed'], ['stale', 'Outdated'], ['untested', 'Unchecked'], ['plan', 'Plan'], ['risk', 'Risks']];
 function paintCode() {
   const blocks = $('#blocks'); if (!blocks || !state.graph) return;
   blocks.querySelectorAll('.code-row, .health-tag').forEach(el => el.remove());
@@ -1499,7 +1528,7 @@ function paintCode() {
     if (w.files.length && Date.now() - Date.parse(w.at) > EDITING && !state.activity.some(a => a.actor === w.actor && a.blocks?.length)) continue;
     for (const id of w.blocks) { const el = shownFor(id); if (el) who.set(el, new Set([...(who.get(el) ?? []), w.actor])); }
   }
-  // Устаревшее и что не так — у видимого блока; у свёрнутой подкарты — за всё, что в ней, числом.
+  // Outdated and what is wrong: on the visible block; on a collapsed sub-map, as a count for everything in it.
   const health = state.health && state.tab === 'map', stale = new Map(), tags = new Map();
   $('#viewport')?.classList.toggle('health', health);
   for (const n of state.graph.nodes) {
@@ -1507,26 +1536,26 @@ function paintCode() {
     const s = state.code.stale[n.id], issues = health ? issuesOf(n) : [];
     if (!s && !issues.length) continue;
     const el = shownFor(n.id); if (!el) continue;
-    if (s && !health) stale.set(el, [...(stale.get(el) ?? []), `«${nodeName(n)}»: ${s.files.join(', ')} (${s.by})`]);
+    if (s && !health) stale.set(el, [...(stale.get(el) ?? []), t('"{name}": {files} ({by})', { name: nodeName(n), files: s.files.join(', '), by: s.by })]);
     const own = tags.get(el) ?? new Map();
-    for (const [k, label] of issues) { const t = own.get(k) ?? { label, n: 0 }; t.n++; own.set(k, t); }
+    for (const [k, label] of issues) { const c = own.get(k) ?? { label, n: 0 }; c.n++; own.set(k, c); }
     if (issues.length) tags.set(el, own);
   }
-  // Имя агента и «устарел?» — одной строкой над блоком: при отдалении карты они не налезают друг на друга.
+  // The agent's name and "outdated?" share one line above the block: when the map is zoomed out they do not overlap.
   for (const el of new Set([...who.keys(), ...stale.keys()])) {
     const actors = who.get(el), lines = stale.get(el);
     if (actors) el.classList.add('working');
-    el.insertAdjacentHTML('beforeend', `<span class="code-row">${actors ? `<span class="who">${esc([...actors].join(', '))}</span>` : ''}${lines ? `<span class="stale-tag" title="${esc(`Файлы изменили после того, как блок описали:\n${lines.join('\n')}`)}">${lines.length > 1 ? `устарели: ${lines.length}` : 'устарел?'}</span>` : ''}</span>`);
+    el.insertAdjacentHTML('beforeend', `<span class="code-row">${actors ? `<span class="who">${esc([...actors].join(', '))}</span>` : ''}${lines ? `<span class="stale-tag" title="${esc(t('Files changed after the block was described:\n{lines}', { lines: lines.join('\n') }))}">${esc(lines.length > 1 ? t('outdated: {n}', { n: lines.length }) : t('outdated?'))}</span>` : ''}</span>`);
   }
-  const many = { failed: 'не прошли', stale: 'устарели', untested: 'без проверки', plan: 'план', risk: 'риски' };
+  const many = { failed: 'failed: {n}', stale: 'outdated: {n}', untested: 'unchecked: {n}', plan: 'plan: {n}', risk: 'risks: {n}' };
   for (const [el, own] of tags) {
     el.classList.add('h-issue');
-    el.insertAdjacentHTML('beforeend', `<span class="health-tag">${HEALTH.filter(([k]) => own.has(k)).map(([k]) => { const t = own.get(k); return `<i class="k-${k}">${esc(t.n > 1 ? `${many[k]}: ${t.n}` : t.label)}</i>`; }).join('')}</span>`);
+    el.insertAdjacentHTML('beforeend', `<span class="health-tag">${HEALTH.filter(([k]) => own.has(k)).map(([k]) => { const c = own.get(k); return `<i class="k-${k}">${esc(c.n > 1 ? t(many[k], { n: c.n }) : c.label)}</i>`; }).join('')}</span>`);
   }
   renderHealth();
 }
-// Режим «Здоровье»: сверху слева — сколько блоков не прошло, устарело, без проверки, в плане и с рисками; нажатие
-// показывает следующий такой блок. Здоровые блоки бледнеют.
+// "Health" mode: at the top left, how many blocks failed, are outdated, unchecked, planned and have risks; a press
+// shows the next such block. Healthy blocks fade.
 function renderHealth() {
   const vp = $('#viewport'); if (!vp) return;
   let panel = $('#health');
@@ -1535,11 +1564,11 @@ function renderHealth() {
   const count = new Map(HEALTH.map(([k]) => [k, 0]));
   for (const n of state.graph.nodes) if (!isNote(n)) for (const [k] of issuesOf(n)) count.set(k, count.get(k) + 1);
   const html = [...count.values()].some(Boolean)
-    ? HEALTH.filter(([k]) => count.get(k)).map(([k, label]) => `<button type="button" class="k-${k}" data-health="${k}">${label} <b>${count.get(k)}</b></button>`).join('')
-    : '<span class="health-ok">Красных, устаревших и непроверенных блоков нет</span>';
+    ? HEALTH.filter(([k]) => count.get(k)).map(([k, label]) => `<button type="button" class="k-${k}" data-health="${k}">${t(label)} <b>${count.get(k)}</b></button>`).join('')
+    : `<span class="health-ok">${t('No failed, outdated or unchecked blocks')}</span>`;
   if (panel.innerHTML !== html) panel.innerHTML = html;
 }
-// Следующий блок выбранного вида: по кругу, от того, что показан сейчас.
+// The next block of the chosen kind: round the list, from the one shown now.
 function nextIssue(kind) {
   const list = state.graph.nodes.filter(n => !isNote(n) && issuesOf(n).some(([k]) => k === kind));
   if (!list.length) return;
@@ -1557,39 +1586,39 @@ async function focusNode(id) {
   if (state.focus && !focusSet(state.focus).has(id)) { const up = node(id)?.parentId; await walk(() => up ? dive(up) : exitFocus()); }
   const n = node(id); if (gen !== page.gen || !n) return;
   const folded = []; for (let p = n.parentId; p; p = node(p)?.parentId) if (node(p)?.collapsed) folded.push([node(p), false]);
-  if (folded.length) { const name = nodeName(folded[0][0]); await commit(foldOps(folded), `Развёрнута подкарта «${name}»`); }
-  // Показанный блок встаёт в центр — это вид человека, слежение выключается.
+  if (folded.length) { const name = nodeName(folded[0][0]); await commit(foldOps(folded), t('Expanded sub-map "{name}"', { name })); }
+  // The shown block is centred: this is the person's view, following turns off.
   stopGlide(); setFollow(false);
   const r = worldRect(node(id) ?? n), vp = $('#viewport');
   state.view.x = vp.clientWidth / 2 - (r.x + r.w / 2) * state.view.z; state.view.y = vp.clientHeight / 2 - (r.y + r.h / 2) * state.view.z;
   applyView(); select({ type: 'node', id });
 }
 document.addEventListener('input', e => {
-  // Пока ползунок тянут, меняется только он сам; карта сворачивается, когда его отпустили или шагнули клавишей.
+  // While the slider is dragged, only the slider changes; the map collapses when it is released or stepped with a key.
   if (e.target.id === 'level') { $('#levels').classList.remove('mixed'); paintLevel(Number(e.target.value)); }
 });
 document.addEventListener('change', e => { if (e.target.id === 'level') pickLevel(Number(e.target.value)); });
-// Нажатие на ползунок левой кнопкой: значение и «ни один уровень не подходит» на момент нажатия.
+// A left-button press on the slider: the value and "no level fits" at the moment of the press.
 let grab = null;
 document.addEventListener('pointerdown', e => {
   grab = e.target.id === 'level' && e.button === 0 && !e.target.disabled ? { pointer: e.pointerId, value: Number(e.target.value), mixed: $('#levels').classList.contains('mixed') } : null;
 });
-// Отпустили на значении, с которого начали (change не будет): если карте не подходил ни один уровень, это значение
-// всё равно применяется — и когда бегунок водили туда и обратно, — иначе ползунок снова показывает карту как есть.
+// Released on the value it started from (there will be no change event): if no level fitted the map, this value is
+// applied anyway, also when the thumb was moved there and back; otherwise the slider shows the map as it is again.
 document.addEventListener('pointerup', e => {
   const g = grab; if (!g || g.pointer !== e.pointerId) return;
   grab = null;
   const value = Number($('#level')?.value);
-  if (value !== g.value) return; // уровень применит change
+  if (value !== g.value) return; // the change event applies the level
   if (g.mixed) pickLevel(value); else setTimeout(renderLevels);
 });
 document.addEventListener('pointercancel', e => { if (grab?.pointer === e.pointerId) { grab = null; setTimeout(renderLevels); } });
-// Точка агента гаснет, если он давно не обращался: перерисовка раз в минуту.
+// The agent's dot goes out if it has not made a request for a long time: a redraw once a minute.
 setInterval(renderAgents, 60000);
 
-// Живое обновление по SSE
+// Live update over SSE
 
-// Узлы, которые в next новые или изменились, и концы новых связей: к ним вписывается мелкая карта в режиме слежения.
+// Nodes that are new or changed in next, and the ends of new links: a small map is fitted to them in follow mode.
 const TOUCH = ['type', 'parentId', 'attachedTo', 'collapsed', 'title', 'text', 'color', 'x', 'y', 'w', 'h'];
 function touched(prev, next) {
   const old = new Map(prev.nodes.map(n => [n.id, n])), edges = new Set(prev.edges.map(e => e.id));
@@ -1597,12 +1626,12 @@ function touched(prev, next) {
   for (const e of next.edges) if (!edges.has(e.id)) ids.push(e.source, e.target);
   return ids;
 }
-// Узлы и связи, которых не было в prev, проявляются; возвращает, сколько их.
+// Nodes and links that were not in prev appear; returns how many there are.
 function markAppeared(prev, next) {
   const had = new Set([...prev.nodes, ...prev.edges].map(x => x.id)), now = performance.now();
   let added = 0;
   for (const x of [...next.nodes, ...next.edges]) if (!had.has(x.id)) { state.appeared.set(x.id, now); added++; }
-  // Сменившаяся отметка у уже бывшего блока вспыхивает; если блок спрятан в свёрнутой подкарте — вспыхивает её карточка.
+  // A changed mark on an existing block flashes; if the block is hidden in a collapsed sub-map, its card flashes.
   const marks = new Map(prev.nodes.map(n => [n.id, n.status])), byId = new Map(next.nodes.map(n => [n.id, n]));
   for (const n of next.nodes) if (marks.has(n.id) && marks.get(n.id) !== n.status && n.status) {
     let shown = n;
@@ -1611,8 +1640,8 @@ function markAppeared(prev, next) {
   }
   return added;
 }
-// Запрос карты один: события во время него только поднимают wanted, после ответа карта дочитывается, если сервер
-// ушёл дальше. Принимается только ревизия новее текущей. Новые узлы и связи проявляются, слежение вписывает карту.
+// One map request at a time: events during it only raise wanted, and after the answer the map is read further if the
+// server has moved on. Only a revision newer than the current one is taken. New nodes and links appear, following fits the map.
 async function liveRefresh(revision) {
   if (!state.graph) return;
   if (revision > state.wanted) state.wanted = revision;
@@ -1625,15 +1654,15 @@ async function liveRefresh(revision) {
   catch (err) { if (gen === page.gen) { state.loading = false; fail(err); } return; }
   if (gen !== page.gen) return;
   state.loading = false;
-  // Без новых событий за время запроса желаемая ревизия — та, что ответил сервер: иначе ревизию, которой на сервере
-  // нет (данные восстановили из копии), карта перечитывала бы без конца.
+  // Without new events during the request, the wanted revision is the one the server answered: otherwise the map would
+  // re-read a revision the server does not have (the data was restored from a copy) forever.
   if (state.wanted === asked) state.wanted = next.revision;
   if (interacting()) { state.pending = true; return; }
   if (next.revision > state.graph.revision) {
     const prev = state.graph;
     sizes = new Map();
     const before = state.tab === 'map' ? boxOf(fitRoots()) : null, ids = touched(prev, next), added = markAppeared(prev, next);
-    // Агент выложил предложение или дополнил его: вид переезжает к новому в нём.
+    // The agent posted a proposal or added to it: the view moves to what is new in it.
     const offered = next.nodes.filter(n => n.proposed && !prev.nodes.some(o => o.id === n.id && o.proposed)).map(n => n.id);
     adopt(next); renderMap();
     const shown = offered.map(node).filter(n => n && visible(n));
@@ -1645,9 +1674,9 @@ async function liveRefresh(revision) {
   if (state.wanted > state.graph.revision) liveRefresh(state.wanted);
 }
 
-// Маршруты: #/ — главная со списком проектов, #/p/<id> — карта проекта. Переход без перезагрузки страницы.
+// Routes: #/ is home with the list of projects, #/p/<id> is a project's map. Moving between them does not reload the page.
 
-let routing = Promise.resolve(), notice = null; // notice — уведомление, которое показать уже на новом экране
+let routing = Promise.resolve(), notice = null; // notice is a notification to show on the new screen
 const route = () => { routing = routing.then(go).catch(err => console.error(err)); };
 window.addEventListener('hashchange', route);
 async function go() {
@@ -1658,15 +1687,15 @@ async function go() {
   if (notice) { toast(notice); notice = null; }
   if (kind === 'home') openHome(); else openProject(id);
 }
-// Уход с экрана: открытая правка и идущие записи сохраняются в старый проект, фокус снимается, поток событий
-// закрывается, уведомление прячется, всё состояние проекта сбрасывается.
+// Leaving a screen: the open edit and running writes are saved to the old project, the focus is cleared, the event
+// stream is closed, the notification is hidden, all project state is reset.
 async function leave() {
   if (page.kind === 'project' && !page.gone) {
     if (state.editing) await finishEdit();
-    // Погружение закрывается, как выходом: сворачивание возвращается, агент узнаёт, что фокуса нет.
+    // The dive closes as on leaving it: the collapsing is restored, the agent learns there is no focus.
     await walk(exitFocus);
     await Promise.allSettled([...saving]);
-    // Ушедший человек ничего не выделяет.
+    // A person who has left selects nothing.
     if (reportSelection.last) papi('/selection', { id: null }).catch(() => {});
   }
   reportSelection.last = undefined;
@@ -1678,33 +1707,36 @@ async function leave() {
   clearTimeout(hoverEdge.timer); clearTimeout(glide.timer);
   $('#app').classList.remove('focused');
 }
-// Вкладку закрывают или перезагружают в погружении: выход из него уходит запросами, которые браузер дошлёт после
-// закрытия, вид карты — прежний. Если запись не дойдёт, сворачивание вернёт перезагруженная страница (undive).
+// The tab is closed or reloaded in a dive: leaving the dive goes out as requests the browser sends after closing, and
+// the map view is the former one. If the write does not get through, the reloaded page restores the collapsing (undive).
 window.addEventListener('pagehide', () => {
   if (page.kind !== 'project' || page.gone || !state.graph || !state.focus) return;
   const send = (path, body) => fetch(page.prefix + path, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${state.session?.token}` }, body: JSON.stringify(body) }).catch(() => {});
   const ops = restoreOps()();
-  if (ops.length) send('/changes', { expectedRevision: state.graph.revision, actor: 'human', message: 'Показана вся карта', operations: ops });
+  if (ops.length) send('/changes', { expectedRevision: state.graph.revision, actor: 'human', message: t('Showed the whole map'), operations: ops });
   send('/focus', { id: null });
   if (state.focusView) { state.view = state.focusView; saveView(); }
 });
 
-// Главная: строка для агента и проекты, новые сверху. Обновляется по общему потоку событий.
+// Home: the line for the agent and the projects, newest first. Updated from the shared event stream.
 
 function openHome() {
   document.title = 'Mycel';
   Object.assign(home, { projects: null, loading: false, again: false, held: false, appeared: new Map() });
-  $('#app').innerHTML = `<div class="home"><div class="home-col">
-      <div class="home-top"><button type="button" class="agent-line" data-copy-agent>Агенту: ${esc(location.origin)}/agent</button><span class="grow"></span><span id="status" role="status"></span></div>
-      <ul class="projects" id="projects"></ul>
-      <section class="devices" id="devices" hidden></section>
-    </div></div>`;
+  homeShell();
   loadHome();
   hubEvents();
   renderDevices();
 }
-// Не чаще раза в 150 мс от первого события: таймер не переставляется, иначе при нескольких агентах события идут
-// чаще 150 мс и список не обновлялся бы вовсе. Запрос один: события во время него дают ещё один после.
+function homeShell() {
+  $('#app').innerHTML = `<div class="home"><div class="home-col">
+      <div class="home-top"><button type="button" class="agent-line" data-copy-agent>${esc(t('For your agent: {url}', { url: `${location.origin}/agent` }))}</button><span class="grow"></span><span id="status" role="status"></span>${langHtml()}</div>
+      <ul class="projects" id="projects"></ul>
+      <section class="devices" id="devices" hidden></section>
+    </div></div>`;
+}
+// At most once per 150 ms from the first event: the timer is not reset, otherwise with several agents events come more
+// often than every 150 ms and the list would never update. One request at a time: events during it give one more after.
 const scheduleHome = () => { home.timer ||= setTimeout(() => { home.timer = 0; loadHome(); }, 150); };
 async function loadHome() {
   if (page.kind !== 'home') return;
@@ -1714,16 +1746,16 @@ async function loadHome() {
   try {
     const { projects } = await api('/api/projects');
     if (gen !== page.gen) return;
-    // События идут на каждую запись агента в любом проекте; тот же список ничего не перерисовывает.
+    // Events come on every agent write in any project; the same list redraws nothing.
     if (home.projects && JSON.stringify(projects) === JSON.stringify(home.projects)) return;
-    // Проявляются только строки, которых не было в прошлом списке; первый показ — без анимации.
+    // Only rows that were not in the previous list appear; the first showing has no animation.
     if (home.projects) { const known = new Set(home.projects.map(p => p.id)), now = performance.now(); for (const p of projects) if (!known.has(p.id)) home.appeared.set(p.id, now); }
     home.projects = projects; renderHome();
   } catch (err) { if (gen === page.gen) fail(err); }
   finally { if (gen === page.gen) { home.loading = false; if (home.again) scheduleHome(); } }
 }
-// Строки привязаны к id проекта: обновление меняет в них только изменившиеся поля, добавляет новые и убирает удалённые.
-// Ссылка и корзина остаются теми же элементами, поэтому клик и фокус на них не теряются. Пока указатель нажат, список ждёт.
+// Rows are tied to the project id: an update changes only the fields that changed in them, adds new ones and removes deleted ones.
+// The link and the trash button stay the same elements, so a click and focus on them are not lost. While the pointer is pressed, the list waits.
 function renderHome() {
   const list = $('#projects'); if (!list || !home.projects) return;
   if (pressed.size) { home.held = true; return; }
@@ -1737,7 +1769,7 @@ function renderHome() {
     if (!li) {
       li = Object.assign(document.createElement('li'), { className: 'p-row' }); li.dataset.id = p.id;
       li.innerHTML = `<a class="p-open" href="#/p/${esc(p.id)}" data-open="${esc(p.id)}"><span class="p-name"><b></b><i class="dot on" hidden></i></span><span class="p-meta"></span><span class="p-path"></span><span class="p-error" hidden></span></a>
-        <button type="button" class="icon-btn p-trash" data-trash="${esc(p.id)}" title="Удалить проект" aria-label="Удалить проект">${icon('trash', 16)}</button>`;
+        <button type="button" class="icon-btn p-trash" data-trash="${esc(p.id)}" title="${t('Delete project')}" aria-label="${t('Delete project')}">${icon('trash', 16)}</button>`;
       const t0 = home.appeared.get(p.id), age = t0 === undefined ? 300 : Math.round(now - t0);
       if (age < 300) { li.classList.add('appear'); li.style.animationDelay = `-${age}ms`; li.onanimationend = () => { li.classList.remove('appear'); li.style.animationDelay = ''; }; }
     }
@@ -1752,40 +1784,41 @@ function fillRow(li, p) {
   const when = Number.isFinite(Date.parse(p.updatedAt)) ? ` · ${date(p.updatedAt)}` : '';
   put('.p-name b', p.name);
   const dot = put('.dot', '', Boolean(waiting)); if (dot.title !== waiting) dot.title = waiting;
-  put('.p-meta', `${plural(p.blocks ?? 0, ['блок', 'блока', 'блоков'])}${when}`);
-  // Проект виртуальной машины: её папку основная машина не видит — рядом имя машины.
-  put('.p-path', p.machine ? `${p.path} · на машине «${p.machine.name}»` : p.exists ? p.path : p.path ? `${p.path} · папки нет` : 'папки нет');
+  put('.p-meta', `${plural(p.blocks ?? 0, '{n} block', '{n} blocks')}${when}`);
+  // A virtual machine's project: the main computer cannot see its folder, so the machine's name is shown next to it.
+  put('.p-path', p.machine ? t('{path} · on machine "{machine}"', { path: p.path, machine: p.machine.name }) : p.exists ? p.path : p.path ? t('{path} · folder missing', { path: p.path }) : t('folder missing'));
   put('.p-error', p.error ?? '', Boolean(p.error));
 }
-// Удаление без подтверждения: проект уходит в корзину Mycel, вернуть его можно из уведомления.
+// Deleting without confirmation: the project goes to Mycel's trash, and it can be brought back from the notification.
 async function deleteProject(id) {
   const p = home.projects?.find(x => x.id === id); if (!p) return;
   const gen = page.gen, path = `/api/projects/${encodeURIComponent(id)}`;
   await api(`${path}/delete`, {});
   if (gen !== page.gen) return;
   home.projects = home.projects.filter(x => x.id !== id); renderHome();
-  toast(`Проект «${p.name}» удалён`, { action: 'Вернуть', run: () => api(`${path}/restore`, {}).then(scheduleHome, fail) });
+  toast(t('Project "{name}" deleted', { name: p.name }), { action: t('[project] Undo'), run: () => api(`${path}/restore`, {}).then(scheduleHome, fail) });
 }
-// Строка для агента копируется целой фразой: её вставляют в чат агента.
+// The line for the agent is copied as a whole phrase: it is pasted into the agent's chat.
 async function copyAgent() {
-  // Из виртуальной машины Mycel отвечает только с ключом: он идёт во фразе заголовком, а curl — той системы, где браузер.
+  // From a virtual machine Mycel answers only with a key: it goes in the phrase as a header, and curl is that of the system the browser runs on.
   const far = !['127.0.0.1', 'localhost'].includes(location.hostname), key = far && state.session?.token;
   const win = far ? /^Win/.test(navigator.platform) : (state.session?.platform ?? (/^Win/.test(navigator.platform) ? 'win32' : '')) === 'win32';
-  const text = `Прочитай инструкцию Mycel и выполни её: ${win ? 'curl.exe -s' : 'curl -s'}${key ? ` -H "Authorization: Bearer ${key}"` : ''} ${location.origin}/agent`;
+  const command = `${win ? 'curl.exe -s' : 'curl -s'}${key ? ` -H "Authorization: Bearer ${key}"` : ''} ${location.origin}/agent`;
+  const text = t('Read the Mycel guide and follow it: {command}', { command });
   try { await navigator.clipboard.writeText(text); }
   catch {
     const area = Object.assign(document.createElement('textarea'), { value: text });
     document.body.append(area); area.select();
     const copied = document.execCommand('copy'); area.remove();
-    if (!copied) throw new Error('Не удалось скопировать.');
+    if (!copied) throw new Error(t('Could not copy.'));
   }
-  toast('Скопировано');
+  toast(t('Copied'));
 }
-// Доступ виртуальных машин. Агент там просит доступ и печатает код; на любой странице Mycel этой машины — карточка
-// с тем же кодом, выбором проекта и кнопками. «Разрешить» выдаёт машине её ключ; на главной — машины с доступом и
-// «Отключить». В самой виртуальной машине этого нет: /api/access ей закрыт.
+// Virtual machine access. The agent there asks for access and prints a code; every Mycel page of this computer shows a
+// card with the same code, a project choice and buttons. "Allow" gives the machine its key; home lists the machines with
+// access and "Disconnect". The virtual machine itself does not have this: /api/access is closed to it.
 async function loadAccess() {
-  try { setAccess(await api('/api/access')); } catch { /* не основная машина или нет связи */ }
+  try { setAccess(await api('/api/access')); } catch { /* not the main computer, or no connection */ }
 }
 function setAccess(info) {
   if (!info || !Array.isArray(info.pending)) return;
@@ -1797,26 +1830,27 @@ function renderAccess() {
   if (!list.length) { el?.remove(); return; }
   if (!el) { el = Object.assign(document.createElement('div'), { id: 'access', className: 'access' }); document.body.append(el); }
   const chosen = page.kind === 'project' ? page.id : state.access.projects[0]?.id;
+  // The code goes into the text already as markup; the other values are escaped before they go in.
   const html = list.map(r => `<div class="access-row" data-pair="${esc(r.id)}">
-      <div class="access-text">Виртуальная машина «${esc(r.name)}» (${esc(r.address)}) просит доступ к Mycel. Код <b>${esc(r.code)}</b> — он должен совпасть с кодом на её экране.</div>
-      <div class="access-act"><label>Проект <select data-pair-project><option value="">без проекта</option>${state.access.projects.map(p => `<option value="${esc(p.id)}"${p.id === chosen ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
-      <button type="button" class="btn ghost" data-pair-deny="${esc(r.id)}">Отклонить</button><button type="button" class="btn" data-pair-approve="${esc(r.id)}">Разрешить</button></div>
+      <div class="access-text">${t('Virtual machine "{name}" ({address}) is asking for access to Mycel. Code {code}: it must match the code on its screen.', { name: esc(r.name), address: esc(r.address), code: `<b>${esc(r.code)}</b>` })}</div>
+      <div class="access-act"><label>${t('Project')} <select data-pair-project><option value="">${t('no project')}</option>${state.access.projects.map(p => `<option value="${esc(p.id)}"${p.id === chosen ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+      <button type="button" class="btn ghost" data-pair-deny="${esc(r.id)}">${t('Deny')}</button><button type="button" class="btn" data-pair-approve="${esc(r.id)}">${t('Allow')}</button></div>
     </div>`).join('');
-  // Список не перерисовывается без перемен: выбранный проект не сбрасывается.
+  // The list is not redrawn without changes: the chosen project is not reset.
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
 }
 function renderDevices() {
   const box = $('#devices'); if (!box) return;
   const list = state.access.devices, name = id => state.access.projects.find(p => p.id === id)?.name ?? id;
   box.hidden = !list.length;
-  box.innerHTML = list.length ? `<h2>Виртуальные машины с доступом</h2><ul>${list.map(d => `<li><span>${esc(d.name)} · ${esc(d.address)}${d.project ? ` · ${esc(name(d.project))}` : ''}${d.lastSeen ? ` · была ${date(d.lastSeen)}` : ''}</span><button type="button" class="btn ghost" data-revoke="${esc(d.id)}">Отключить</button></li>`).join('')}</ul>` : '';
+  box.innerHTML = list.length ? `<h2>${t('Virtual machines with access')}</h2><ul>${list.map(d => `<li><span>${esc(d.name)} · ${esc(d.address)}${d.project ? ` · ${esc(name(d.project))}` : ''}${d.lastSeen ? ` · ${esc(t('last seen {date}', { date: date(d.lastSeen) }))}` : ''}</span><button type="button" class="btn ghost" data-revoke="${esc(d.id)}">${t('Disconnect')}</button></li>`).join('')}</ul>` : '';
 }
 async function answerPair(control, approve) {
   const row = control.closest('[data-pair]'), id = row.dataset.pair, project = row.querySelector('[data-pair-project]')?.value || null;
   row.querySelectorAll('button').forEach(b => { b.disabled = true; });
   try {
     setAccess(await api(`/api/pair/${encodeURIComponent(id)}/${approve ? 'approve' : 'deny'}`, approve ? { project } : {}));
-    toast(approve ? 'Доступ разрешён' : 'Запрос отклонён');
+    toast(approve ? t('Access allowed') : t('Request denied'));
   } catch (err) { row.querySelectorAll('button').forEach(b => { b.disabled = false; }); fail(err); loadAccess(); }
 }
 
@@ -1829,7 +1863,7 @@ function hubEvents() {
     const data = JSON.parse(e.data);
     if (data.access) setAccess(data.access); else scheduleHome();
   };
-  // Запросы доступа, пришедшие, пока поток подключался, — перечитать: дальше их приносят события.
+  // Access requests that arrived while the stream was connecting are re-read: after that, events bring them.
   events.onopen = () => { if (gen !== page.gen) return; setStatus(true); loadAccess(); if (broken) { broken = false; loadSession().catch(() => {}); } };
   events.onerror = () => {
     if (gen !== page.gen) return;
@@ -1838,12 +1872,12 @@ function hubEvents() {
   };
 }
 
-// Проект: имя и карта, затем поток событий только этого проекта.
+// Project: name and map, then the event stream of this project only.
 
 async function openProject(id) {
   const gen = page.gen, prefix = page.prefix;
   document.title = 'Mycel';
-  $('#app').innerHTML = '<div class="loading">Загрузка…</div>';
+  $('#app').innerHTML = `<div class="loading">${t('Loading…')}</div>`;
   try {
     const [{ project }, graph] = await Promise.all([api(prefix), api(`${prefix}/graph`)]);
     if (gen !== page.gen) return;
@@ -1852,13 +1886,13 @@ async function openProject(id) {
     const back = undive(id);
     shell(); renderAgents();
     await showTab('map');
-    // Выход из погружения при закрытии прошлой страницы не дошёл: сворачивание возвращается, фокус снимается.
-    if (back.length) { papi('/focus', { id: null }).catch(() => {}); await commit(back, 'Показана вся карта').catch(recover); }
+    // Leaving the dive when the previous page closed did not get through: the collapsing is restored, the focus is cleared.
+    if (back.length) { papi('/focus', { id: null }).catch(() => {}); await commit(back, t('Showed the whole map')).catch(recover); }
     if (gen === page.gen) projectEvents();
   } catch (err) {
     if (gen !== page.gen || err instanceof Stale) return;
-    if (err.status === 404) { notice = err.deleted ? 'Проект удалён' : err.message; location.hash = '#/'; return; }
-    $('#app').innerHTML = `<div class="loading"><h2>Не удалось открыть карту</h2><p>${esc(err.message)}</p><button class="btn" id="retry">Повторить</button> <a class="btn" href="#/">К проектам</a></div>`;
+    if (err.status === 404) { notice = err.deleted ? t('Project deleted') : err.message; location.hash = '#/'; return; }
+    $('#app').innerHTML = `<div class="loading"><h2>${t('Could not open the map')}</h2><p>${esc(err.message)}</p><button class="btn" id="retry">${t('Retry')}</button> <a class="btn" href="#/">${t('Back to projects')}</a></div>`;
     $('#retry').onclick = () => { if (gen === page.gen) openProject(id); };
   }
 }
@@ -1875,13 +1909,13 @@ function projectEvents() {
     if (data.agents) { state.agents = data.agents; state.activity = data.activity ?? []; renderAgents(); }
     if (data.work) { state.work = data.work; state.code = data.code ?? state.code; paintCode(); }
     if (data.access) setAccess(data.access);
-    // Агент показывает блок; пока человек правит текст или тянет узел, вид не дёргается.
+    // The agent shows a block; while the person is editing text or dragging a node, the view does not jump.
     if (data.show && !state.editing && !state.gesture) focusNode(data.show).catch(recover);
   };
-  // После обрыва связи сессия перечитывается: токен мог смениться.
-  // Запросы доступа, пришедшие, пока поток подключался, — перечитать: дальше их приносят события.
+  // After a lost connection the session is re-read: the token may have changed.
+  // Access requests that arrived while the stream was connecting are re-read: after that, events bring them.
   events.onopen = () => { if (gen !== page.gen) return; setStatus(true); loadAccess(); if (broken) { broken = false; loadSession().catch(() => {}); } };
-  // Сервер закрыл поток (а не просто пропала связь): проект удалён — на главную, иначе переподключиться через 2 с.
+  // The server closed the stream (rather than the connection dropping): the project was deleted, go home; otherwise reconnect in 2 s.
   events.onerror = async () => {
     if (gen !== page.gen) return;
     setStatus(false); broken = true;
@@ -1891,19 +1925,232 @@ function projectEvents() {
     setTimeout(() => { if (gen === page.gen && page.events === events) projectEvents(); }, 2000);
   };
 }
-// Проект удалили (на главной или в другом окне): возвращаемся к списку, правку уже некуда сохранить.
+// The project was deleted (on home or in another window): back to the list, there is nowhere to save the edit anymore.
 function gone() {
   if (page.gone) return;
   page.gone = true; page.events?.close();
-  notice = 'Проект удалён'; location.hash = '#/';
+  notice = t('Project deleted'); location.hash = '#/';
 }
 
+// Switching the language keeps the screen: the choice is stored and the open page is drawn again in place, with the
+// same project, view, dive and selection.
+async function setLang(next) {
+  if (next === lang || !LANGS.includes(next)) return;
+  prefs.set(LANG_KEY, next);
+  lang = next; document.documentElement.lang = lang;
+  if (page.kind === 'home') { homeShell(); renderHome(); renderDevices(); }
+  else if (page.kind === 'project' && state.graph) {
+    const gen = page.gen;
+    if (state.editing) await finishEdit();
+    if (gen !== page.gen) return;
+    closeMenu(); if (state.connectFrom || state.rebind) stopConnect();
+    shell(); renderAgents();
+    await showTab(state.tab);
+  }
+  setStatus(state.online); renderAccess();
+  $(`[data-lang="${lang}"]`)?.focus({ preventScroll: true });
+}
+
+// Russian dictionary: English source text → the Russian wording. A plural entry lists the one, few and many forms.
+const RU = {
+  // Common
+  'Loading…': 'Загрузка…',
+  'No connection to the server.': 'Нет связи с сервером.',
+  'No connection to the server': 'Нет связи с сервером',
+  'Server error: {status}': 'Ошибка сервера: {status}',
+  'Language': 'Язык',
+  'English': 'Английский',
+  'Russian': 'Русский',
+  'empty note': 'пустая заметка',
+  'untitled': 'без названия',
+  'Undo': 'Отменить',
+  // Colours and levels
+  'No colour': 'Без цвета',
+  'Grey': 'Серый',
+  'Red': 'Красный',
+  'Orange': 'Оранжевый',
+  'Yellow': 'Жёлтый',
+  'Green': 'Зелёный',
+  'Blue': 'Синий',
+  'Purple': 'Фиолетовый',
+  'Concept': 'Концепция',
+  'Mechanics': 'Механика',
+  'Technical': 'Техника',
+  'Code': 'Код',
+  // Control bar, focus bar and zoom
+  'Map': 'Карта',
+  'History': 'История',
+  'Level': 'Уровень',
+  'Sub-maps collapsed unevenly': 'Подкарты свёрнуты вразнобой',
+  'Health': 'Здоровье',
+  'What is wrong with blocks: failed, outdated, unchecked, risks': 'Что с блоками не так: не прошли проверку, устарели, без проверки, риски',
+  'Download map': 'Скачать карту',
+  'Leave focus': 'Выйти из фокуса',
+  'Zoom out': 'Уменьшить',
+  'Zoom in': 'Увеличить',
+  'Show all': 'Показать всё',
+  // Blocks, notes and links on the map
+  '{n} blocks': ['{n} блок', '{n} блока', '{n} блоков'],
+  '{n} notes': ['{n} заметка', '{n} заметки', '{n} заметок'],
+  '{list} inside': '{list} внутри',
+  'Passed {passed} of {total}': 'Проверено {passed} из {total}',
+  'Files: {files}': 'Файлы: {files}',
+  'Check: {test}': 'Проверка: {test}',
+  'Expand sub-map': 'Развернуть подкарту',
+  'Collapse sub-map': 'Свернуть подкарту',
+  'Expand': 'Развернуть',
+  'Collapse': 'Свернуть',
+  'Edit': 'Изменить',
+  'Edit block': 'Изменить блок',
+  'Drag to another block to link': 'Потяните к другому блоку, чтобы связать',
+  'Drag onto another block': 'Перетащите на другой блок',
+  'Title': 'Название',
+  'Block title': 'Название блока',
+  'Text': 'Текст',
+  // Selection panel and context menu
+  'Link to another block': 'Связать с другим блоком',
+  'Link': 'Связать',
+  'Delete': 'Удалить',
+  'Label': 'Подпись',
+  'Link label': 'Подпись связи',
+  'Reverse direction': 'Сменить направление',
+  'Delete link': 'Удалить связь',
+  'Detach from block': 'Открепить от блока',
+  'Open': 'Открыть',
+  'Block inside': 'Блок внутри',
+  'Note inside': 'Заметка внутри',
+  'Note on block': 'Заметка к блоку',
+  'Link to…': 'Связать с…',
+  'Check': 'Проверить',
+  'Edit note': 'Изменить заметку',
+  'Move start to…': 'Перенести начало на…',
+  'Move end to…': 'Перенести конец на…',
+  'Block': 'Блок',
+  'Note': 'Заметка',
+  // Notifications on the map
+  'The agent will check "{name}"': 'Агент проверит «{name}»',
+  'No agent is connected right now: it will see the request to check "{name}" when it comes back': 'Агента сейчас нет на связи: он увидит просьбу проверить «{name}», когда вернётся',
+  'Click the block to link to': 'Нажмите на блок, с которым связать',
+  'Click the block the link should start from': 'Нажмите на блок, откуда пойдёт связь',
+  'Click the block the link should go to': 'Нажмите на блок, куда пойдёт связь',
+  'A link cannot loop back to its own block': 'Связь не может замыкаться на себя',
+  'This link already exists': 'Такая связь уже есть',
+  'A link in the opposite direction already exists': 'Встречная связь уже есть',
+  'Link deleted': 'Связь удалена',
+  'Note deleted': 'Заметка удалена',
+  'Block and its content deleted': 'Блок и его содержимое удалены',
+  'Block deleted': 'Блок удалён',
+  // History entries written by the interface
+  'Added note "{name}"': 'Добавлена заметка «{name}»',
+  'Added block "{name}"': 'Добавлен блок «{name}»',
+  'Changed note "{name}"': 'Изменена заметка «{name}»',
+  'Changed block "{name}"': 'Изменён блок «{name}»',
+  'Deleted note "{name}"': 'Удалена заметка «{name}»',
+  'Deleted block "{name}"': 'Удалён блок «{name}»',
+  'Restored note "{name}"': 'Восстановлена заметка «{name}»',
+  'Restored block "{name}"': 'Восстановлен блок «{name}»',
+  'Moved note "{name}"': 'Перемещена заметка «{name}»',
+  'Moved block "{name}"': 'Перемещён блок «{name}»',
+  'Moved note "{name}" {where}': 'Перенесена заметка «{name}» {where}',
+  'Moved block "{name}" {where}': 'Перенесён блок «{name}» {where}',
+  'into "{name}"': 'в «{name}»',
+  'to the main map': 'на основную карту',
+  'Attached note "{name}"': 'Прикреплена заметка «{name}»',
+  'Detached note "{name}"': 'Откреплена заметка «{name}»',
+  'Changed size of note "{name}"': 'Изменён размер: заметка «{name}»',
+  'Changed size of block "{name}"': 'Изменён размер: блок «{name}»',
+  'Expanded sub-map "{name}"': 'Развёрнута подкарта «{name}»',
+  'Collapsed sub-map "{name}"': 'Свёрнута подкарта «{name}»',
+  'Opened block "{name}"': 'Открыт блок «{name}»',
+  'Showed level "{level}"': 'Показан уровень «{level}»',
+  'Showed the whole map': 'Показана вся карта',
+  'Added link': 'Добавлена связь',
+  'Deleted link': 'Удалена связь',
+  'Restored link': 'Восстановлена связь',
+  'Moved link': 'Перенесена связь',
+  'Reversed link': 'Изменено направление связи',
+  'Changed link label': 'Изменена подпись связи',
+  // The person's edits and agent proposals
+  'Finish edits': 'Закончить правки',
+  'Entries since the edits started': 'Записей с начала правок',
+  'Edits sent to the agent': 'Правки переданы агенту',
+  'Proposal "{title}"': 'Предложение «{title}»',
+  'Cards in the proposal': 'Карточек в предложении',
+  'Reject': 'Отклонить',
+  'Accept': 'Принять',
+  'Proposal accepted': 'Предложение принято',
+  'Proposal rejected': 'Предложение отклонено',
+  // Code and Health
+  'failed': 'не прошла',
+  'outdated?': 'устарел?',
+  'unchecked': 'без проверки',
+  'plan': 'план',
+  'key?': 'ключ?',
+  'failed: {n}': 'не прошли: {n}',
+  'outdated: {n}': 'устарели: {n}',
+  'unchecked: {n}': 'без проверки: {n}',
+  'plan: {n}': 'план: {n}',
+  'risks: {n}': 'риски: {n}',
+  'Failed': 'Не прошло',
+  'Outdated': 'Устарело',
+  'Unchecked': 'Без проверки',
+  'Plan': 'План',
+  'Risks': 'Риски',
+  '"{name}": {files} ({by})': '«{name}»: {files} ({by})',
+  'Files changed after the block was described:\n{lines}': 'Файлы изменили после того, как блок описали:\n{lines}',
+  'No failed, outdated or unchecked blocks': 'Красных, устаревших и непроверенных блоков нет',
+  // History and What changed
+  'What changed': 'Что изменилось',
+  'Last hour': 'За час',
+  'Last day': 'За день',
+  'Last week': 'За неделю',
+  '"{title}"': '«{title}»',
+  'Passed: {list}.': 'Проверено: {list}.',
+  'Failed: {list}.': 'Проверка не прошла: {list}.',
+  'Entries: {n}': 'Записей: {n}',
+  'yours: {n}': 'ваших: {n}',
+  'agents: {list}': 'агенты: {list}',
+  'No changes in how the project is built over this period.': 'Устройство проекта за это время не менялось.',
+  'You': 'Человек',
+  'System': 'Система',
+  'revision {n}': 'ревизия {n}',
+  'No changes yet.': 'Изменений пока нет.',
+  // Home
+  'For your agent: {url}': 'Агенту: {url}',
+  'Read the Mycel guide and follow it: {command}': 'Прочитай инструкцию Mycel и выполни её: {command}',
+  'Copied': 'Скопировано',
+  'Could not copy.': 'Не удалось скопировать.',
+  'Delete project': 'Удалить проект',
+  '{path} · on machine "{machine}"': '{path} · на машине «{machine}»',
+  '{path} · folder missing': '{path} · папки нет',
+  'folder missing': 'папки нет',
+  'Project "{name}" deleted': 'Проект «{name}» удалён',
+  '[project] Undo': 'Вернуть',
+  'Project deleted': 'Проект удалён',
+  'Could not open the map': 'Не удалось открыть карту',
+  'Retry': 'Повторить',
+  'Back to projects': 'К проектам',
+  // Virtual machine access
+  'Virtual machine "{name}" ({address}) is asking for access to Mycel. Code {code}: it must match the code on its screen.': 'Виртуальная машина «{name}» ({address}) просит доступ к Mycel. Код {code} — он должен совпасть с кодом на её экране.',
+  'Project': 'Проект',
+  'no project': 'без проекта',
+  'Deny': 'Отклонить',
+  'Allow': 'Разрешить',
+  'Access allowed': 'Доступ разрешён',
+  'Request denied': 'Запрос отклонён',
+  'Virtual machines with access': 'Виртуальные машины с доступом',
+  'last seen {date}': 'была {date}',
+  'Disconnect': 'Отключить',
+  'Machine disconnected': 'Машина отключена'
+};
+
 async function boot() {
-  // Без сессии экраны всё равно открываются: чтение её не требует, а запись перечитает её на 401.
+  const first = $('#app > .loading'); if (first) first.textContent = t('Loading…');
+  // Without a session the screens still open: reading does not need it, and a write re-reads it on 401.
   await loadSession().catch(() => {});
   route();
   loadAccess();
 }
 boot();
-// Доступ к внутренностям для отладки из консоли браузера.
+// Access to the internals for debugging from the browser console.
 window.mycel = { state, page, home, node, blockNear, containerAt, toWorld, toScreen, worldRect, layoutSize, fieldRect, edgeGeometry, focusNode, dive, goUp, exitFocus, liveRefresh, autoFit };

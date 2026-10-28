@@ -1,23 +1,29 @@
-// Уровни абстракции по глубине вложенности и проверка пакета агента перед записью. «Концепцию» и «Механику» (глубина
-// 0 и 1) читают люди без программирования: там коротко и без кода, файлов и имён из кода. Проверяются только поля,
-// которые пакет добавляет или меняет; старое содержимое и правки человека из интерфейса не проверяются.
+// Abstraction levels by nesting depth and the check of an agent's batch before writing. "Concept" and "Mechanics" (depth
+// 0 and 1) are read by people who do not program: short there, without code, files and names from code. Only the fields
+// the batch adds or changes are checked; old content and the person's edits from the interface are not checked.
 
-export const levelNames = ['концепция', 'механика', 'техника', 'код'];
+export const levelNames = ['concept', 'mechanics', 'technical', 'code'];
 export const levelOf = depth => levelNames[Math.min(depth, levelNames.length - 1)];
 export const plainDepth = 1, maxTitle = 40, maxText = 200;
 
-// Расширения файлов кода и настроек. Однобуквенные (c, h) — только у имени от двух символов: иначе «a.c» из сокращений.
+// Extensions of code and settings files. One-letter ones (c, h) only after a name of two characters or more: otherwise "a.c" from abbreviations.
 const ext = 'mjs|cjs|jsx|js|tsx|ts|pyw|py|ipynb|rb|go|rs|java|kts|kt|scala|cs|cpp|cc|cxx|c|hpp|h|swift|php|lua|dart|exs|ex|erl|sh|bash|zsh|ps1|psm1|bat|cmd|sql|sqlite|db|jsonc|json|yaml|yml|toml|ini|cfg|conf|config|env|properties|xml|plist|gradle|lock|html|htm|css|scss|sass|less|vue|svelte|mdx|md|txt|log|tf|proto|graphql|gql|gitignore|dockerignore|npmrc|nvmrc|editorconfig|eslintrc|prettierrc|babelrc|bashrc|zshrc';
-// Имя файла может стоять и после пути, который isPath не узнал (Controllers/HomeController.cs, Папка/main.py).
+// A file name can also follow a path that isPath did not recognise (Controllers/HomeController.cs, Папка/main.py).
 const fileRe = new RegExp(String.raw`(?<![\p{L}\p{N}_.-])[\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}_-]+)*\.(?:${ext})(?![\p{L}\p{N}_-])`, 'giu');
 const fileName = new RegExp(String.raw`^[\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}_-]+)*\.(?:${ext})$`, 'iu');
 const bareFiles = /\b(?:Dockerfile|Makefile|Procfile|Gemfile|Rakefile|Jenkinsfile|Vagrantfile)\b/g;
-// Node.js, Vue.js, D3.js — названия продуктов, а не файлы.
+// Node.js, Vue.js, D3.js are product names, not files.
 const product = s => /^[A-Z][A-Za-z0-9]*\.js$/.test(s);
 const isFile = s => !product(s) && (!/\.[ch]$/i.test(s) || /^[\p{L}\p{N}_-]{2,}\.[ch]$/iu.test(s));
-// Путь: адрес, абсолютный или относительный путь, диск Windows или ASCII-слова через / или \, среди которых есть
-// файл кода (UI/Button.tsx, /main.py) или строчное слово от трёх букв (src/pay). «TCP/IP», «24/7», «км/ч»,
-// «Android/iOS», «Node.js/Express», «/start» — не пути.
+// A path: an address, an absolute or relative path, a Windows drive, or ASCII words joined by / or \ among which there is
+// a code file (UI/Button.tsx, /main.py) or a lowercase word of three letters or more (src/pay). "TCP/IP", "24/7", "км/ч",
+// "Android/iOS", "Node.js/Express", "/start" are not paths, nor are two everyday English words ("and/or", "read/write").
+const prose = new Set(('and or nor not but yes no on off in out up down true false he she him her his hers they them their we us you ' +
+  'read write input output open close start stop begin end login logout upload download send receive buy sell add remove create delete ' +
+  'edit view show hide save load import export before after day night week month year hour per either client server front back ' +
+  'frontend backend left right top bottom plus minus win lose pass fail good bad new old male female man woman men women boy girl ' +
+  'mom dad parent child student teacher user admin buyer seller question answer text voice photo video image audio light dark ' +
+  'online offline mobile desktop web').split(' '));
 function isPath(w) {
   if (!/[\\/]/.test(w)) return false;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(w) || /^[A-Za-z]:[\\/]/.test(w)) return true;
@@ -25,13 +31,16 @@ function isPath(w) {
   const parts = w.split(/[\\/]/).filter(Boolean);
   if (parts.some(p => fileName.test(p) && isFile(p))) return true;
   if (/^(?:\.{1,2}|~)?[\\/]/.test(w)) return parts.length >= 2 && parts.some(p => /[A-Za-z]/.test(p));
+  if (parts.length === 2 && parts.every(p => prose.has(p.toLowerCase()))) return false;
   return parts.length >= 2 && parts.some(p => /^[a-z0-9_.~-]{3,}$/.test(p) && /[a-z]/.test(p));
 }
-// Вызов: имя (и через точку) и сразу скобки, пустые или с аргументами: send(), send(message), create(...). В русском
-// тексте перед скобкой пробел — «ИИ (GPT-4o)», «Бот (Telegram)» не вызовы; «ответ(ы)» кириллицей — тоже.
+// A call: a name (dotted too) right before brackets, empty or with arguments: send(), send(message), create(...). In
+// Russian text there is a space before the bracket: "ИИ (GPT-4o)", "Бот (Telegram)" are not calls; "ответ(ы)" in Cyrillic
+// is not one either, and neither is an English plural ending: "answer(s)", "box(es)", "entr(ies)".
 const callRe = /(?<![\p{L}\p{N}_$.-])[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\([^()]*\)/gu;
-// Имя через точку: message.text, os.getenv, settings.DEBUG, JSON.parse, ChatCompletion.create. Не код: адреса сайтов
-// (openai.com, t.me, Booking.com), документы (photo.jpg), Node.js, ASP.NET, Yandex.Music, «e.g.», «a.m.».
+const plural = m => /^[A-Za-z]+\((?:s|es|ies)\)$/.test(m);
+// A dotted name: message.text, os.getenv, settings.DEBUG, JSON.parse, ChatCompletion.create. Not code: site addresses
+// (openai.com, t.me, Booking.com), documents (photo.jpg), Node.js, ASP.NET, Yandex.Music, "e.g.", "a.m.".
 const dottedRe = /(?<![\p{L}\p{N}_$.-])[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+(?![\p{L}\p{N}_$-])/gu;
 const site = /^(?:com|net|org|info|biz|edu|gov|ru|su|by|kz|ua|uz|me|io|ai|app|dev|co|uk|us|de|eu|tv|fm|ly|so|to|be|gg|cc|xyz|online|site|shop|tech|cloud|jpe?g|png|gif|webp|heic|svg|pdf|docx?|xlsx?|pptx?|odt|rtf|csv|mp3|mp4|m4a|mov|avi|mkv|webm|wav|ogg|oga|zip|rar|7z)$/i;
 const dotted = m => {
@@ -39,49 +48,49 @@ const dotted = m => {
   if (product(m) || site.test(last) || first.length < 2 || last.length < 2) return false;
   return /^[a-z_$]/.test(first) || /^[a-z_$]/.test(last);
 };
-// Имя пользователя и команда бота в Telegram (@study_buddy_bot, /set_language) — то, что пишет пользователь, а не код.
+// A Telegram user name and bot command (@study_buddy_bot, /set_language) are what the user types, not code.
 const handle = String.raw`(?<!(?:^|[\s«"'(\[“„])[@/])`;
 const snakeRe = new RegExp(String.raw`(?<![\w$])${handle}\w*_\w*(?![\w$])`, 'g');
-// camelCase: строчное слово от двух букв, затем заглавная и снова строчная (getResponse). iPhone, macOS, eBay — нет.
+// camelCase: a lowercase word of two letters or more, then a capital and a lowercase letter again (getResponse). Not iPhone, macOS, eBay.
 const camelRe = new RegExp(String.raw`(?<![\w$])${handle}[a-z][a-z0-9]+[A-Z]+[a-z][A-Za-z0-9]*(?![\w$])`, 'g');
-// Класс: слово с заглавной и ролью из кода на конце (CartService, BotHandler, OpenAIClient, TypeError) или Async…
-// (AsyncOpenAI). YouTube, OpenAI, WhatsApp, одно «Service» — нет.
+// A class: a capitalised word ending in a role from code (CartService, BotHandler, OpenAIClient, TypeError) or Async…
+// (AsyncOpenAI). Not YouTube, OpenAI, WhatsApp, or "Service" on its own.
 const classRe = /(?<![\w$])(?:[A-Z][A-Za-z0-9]*(?:Service|Handler|Client|Controller|Manager|Repository|Provider|Factory|Router|Middleware|Adapter|Dispatcher|Listener|Processor|Validator|Serializer|Helper|Utils|Exception|Error)|Async[A-Z][A-Za-z0-9]*)(?![\w$])/g;
 
-// Что в тексте выдаёт код: [что, фрагмент]. Найденное вырезается, чтобы `get_response()` в кавычках не считался трижды.
+// What in a text gives away code: [what, fragment]. Whatever is found is cut out so `get_response()` in backticks is not counted three times.
 export function codeFragments(value) {
   let s = String(value ?? '');
   const found = [], take = (re, what, keep = () => true) => {
     s = s.replace(re, m => { if (!keep(m)) return m; found.push([what, m]); return ' '; });
   };
-  take(/`[^`]*`?/g, 'код в обратных кавычках');
+  take(/`[^`]*`?/g, 'code in backticks');
   s = s.split(/(\s+)/).map(word => {
     const w = word.replace(/^[«"'(\[“”„‘‚]+|[»"')\].,:;!?…“”’‘]+$/g, '');
-    if (w && isPath(w)) { found.push(['файл или путь', w]); return ' '; }
+    if (w && isPath(w)) { found.push(['file or path', w]); return ' '; }
     return word;
   }).join('');
-  take(fileRe, 'файл', isFile);
-  take(bareFiles, 'файл');
-  take(callRe, 'вызов функции');
-  take(dottedRe, 'имя из кода', dotted);
-  take(snakeRe, 'имя из кода', m => /[A-Za-z]/.test(m));
-  take(camelRe, 'имя из кода');
-  take(classRe, 'имя из кода');
+  take(fileRe, 'file', isFile);
+  take(bareFiles, 'file');
+  take(callRe, 'function call', m => !plural(m));
+  take(dottedRe, 'name from code', dotted);
+  take(snakeRe, 'name from code', m => /[A-Za-z]/.test(m));
+  take(camelRe, 'name from code');
+  take(classRe, 'name from code');
   return found;
 }
 
-// Нарушения пакета operations поверх карты graph (до записи). Глубина узла — по итоговой вложенности после пакета.
-// Возвращает [{ what: 'block' | 'note' | 'edge', name, level, field, problems: [[что, фрагмент]] }].
-// Проверяются итоговые значения: текст, добавленный и тут же исправленный в том же пакете, — по исправленному. Блок
-// называется так, как его знает агент: по названию до пакета, новый — по названию из пакета.
+// Violations of the operations batch on top of the graph map (before writing). A node's depth follows its final nesting after the batch.
+// Returns [{ what: 'block' | 'note' | 'edge', name, level, field, problems: [[what, fragment]] }].
+// Final values are checked: a text added and corrected in the same batch is checked as corrected. A block is named the
+// way the agent knows it: by its title before the batch, a new one by its title from the batch.
 export function levelProblems(graph, operations) {
   const ops = Array.isArray(operations) ? operations.filter(isObject) : [];
   const parent = new Map(graph.nodes.map(n => [n.id, n.parentId ?? null])), known = new Map(graph.nodes.map(n => [n.id, n]));
   const edges = new Map(graph.edges.map(e => [e.id, { ...e }]));
-  // К какому блоку прикреплена каждая заметка: блок, перенесённый на другой уровень, уводит их с собой (как в applyOperations).
+  // Which block each note is attached to: a block moved to another level takes them along (as in applyOperations).
   const attached = new Map(graph.nodes.filter(n => n.type === 'note').map(n => [n.id, n.attachedTo ?? null]));
-  // Поля, которые пакет добавляет или меняет. Узел и связь без id получают ключ с «#» (в id его нет): на них никто не
-  // ссылается.
+  // Fields the batch adds or changes. A node or link without an id gets a key with "#" (ids cannot contain it): nothing
+  // refers to them.
   const fields = new Map(), labels = new Map(), pick = (o, keys) => Object.fromEntries(keys.filter(k => k in o).map(k => [k, o[k]]));
   ops.forEach((op, i) => {
     if (op.type === 'add-node' && isObject(op.node)) {
@@ -111,27 +120,27 @@ export function levelProblems(graph, operations) {
   const out = [], check = (what, label, level, field, value, max) => {
     if (typeof value !== 'string' || !value) return;
     const problems = codeFragments(value);
-    if (max && value.length > max) problems.unshift([`длиннее ${max} символов`, String(value.length)]);
+    if (max && value.length > max) problems.unshift([`longer than ${max} characters`, String(value.length)]);
     if (problems.length) out.push({ what, name: label, level, field, problems });
   };
   for (const [id, f] of fields) if (plain(id)) {
     const what = known.get(id)?.type === 'note' ? 'note' : 'block', level = levelOf(depth(id));
-    check(what, name(id), level, 'название', f.title, maxTitle);
-    check(what, name(id), level, 'текст', f.text, maxText);
+    check(what, name(id), level, 'title', f.title, maxTitle);
+    check(what, name(id), level, 'text', f.text, maxText);
   }
   for (const [id, label] of labels) {
     const e = edges.get(id);
-    if (plain(e.source) && plain(e.target)) check('edge', `${name(e.source)}» → «${name(e.target)}`, levelOf(Math.max(depth(e.source), depth(e.target))), 'подпись', label, 0);
+    if (plain(e.source) && plain(e.target)) check('edge', `${name(e.source)}" → "${name(e.target)}`, levelOf(Math.max(depth(e.source), depth(e.target))), 'label', label, 0);
   }
   return out;
 }
 const isObject = v => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
-const kinds = { block: 'блок', note: 'заметка', edge: 'связь' };
-export const levelAdvice = 'Уровни «Концепция» и «Механика» читают люди без программирования: код, файлы и имена переменных — в подкарту, на уровень «Техника»; исправь файл и повтори.';
-// Текст отказа: каждое нарушение с блоком, уровнем и фрагментом, в конце — куда это перенести.
+const kinds = { block: 'block', note: 'note', edge: 'link' };
+export const levelAdvice = 'The "Concept" and "Mechanics" levels are read by people who do not program: move code, files and variable names into a sub-map, to the "Technical" level; fix the file and try again.';
+// The refusal text: every violation with its block, level and fragment, and at the end where to move it.
 export function levelReport(problems) {
-  return ['Запись отклонена, ничего не записано:',
-    ...problems.map(p => `- ${kinds[p.what]} «${p.name}» (${p.level}), ${p.field}: ${p.problems.map(([what, fragment]) => /^длиннее/.test(what) ? `${what} (${fragment})` : `${what} «${fragment}»`).join('; ')}`),
+  return ['Write rejected, nothing was written:',
+    ...problems.map(p => `- ${kinds[p.what]} "${p.name}" (${p.level}), ${p.field}: ${p.problems.map(([what, fragment]) => /^longer than/.test(what) ? `${what} (${fragment})` : `${what} "${fragment}"`).join('; ')}`),
     levelAdvice].join('\n');
 }

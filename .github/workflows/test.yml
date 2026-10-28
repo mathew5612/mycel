@@ -21,5 +21,5 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
-      # Модель, хаб, командная строка и MCP. Интерфейс (headless Chrome) и раскладка с замерами скорости — локально.
+      # Model, hub, CLI and MCP. The UI (headless Chrome) and the layout tests with timing checks run locally.
       - run: node --test --test-reporter=spec test/app.test.mjs test/cli.test.mjs test/mcp.test.mjs

@@ -9,5 +9,5 @@ if not defined NODE goto nonode
 if errorlevel 1 pause
 exit /b
 :nonode
-echo Нужен Node.js 22+: https://nodejs.org
+echo Node.js 22+ is needed: https://nodejs.org
 pause
