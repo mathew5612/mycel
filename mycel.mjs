@@ -633,7 +633,8 @@ function overview(graph, code) {
   const line = n => `"${n.title || 'untitled'}" (${n.id})${n.text ? ` — ${first(n.text)}` : ''}`;
   const count = s => graph.nodes.filter(n => n.status === s);
   const lines = [`Mycel: project "${project.name}" has a map of how it works, ${plural(graph.nodes.filter(n => n.type === 'block').length, 'block', 'blocks')}, and the person sees it: ${origin}/#/p/${project.id}.`,
-    'Read the part of the map you need, not all the code: mycel context --focus <id> (in MCP, mycel_context with focus). The guide: mycel guide (mycel_guide).', '', 'Concepts and mechanics:'];
+    'Read the part of the map you need, not all the code: mycel context --focus <id> (in MCP, mycel_context with focus). The guide: mycel guide (mycel_guide).',
+    'Write the map (titles, texts, notes, link labels, the doing line) in the language the person uses with you.', '', 'Concepts and mechanics:'];
   for (const c of kids(null)) { lines.push(`- ${line(c)}`); for (const m of kids(c.id)) lines.push(`  - ${line(m)}`); }
   const marks = [count('passed').length && `passed ${count('passed').length}`, count('failed').length && `failed ${count('failed').length} (${count('failed').slice(0, 5).map(n => `"${n.title}"`).join(', ')})`, count('plan').length && `plan ${count('plan').length}`].filter(Boolean);
   if (marks.length) lines.push('', `Marks: ${marks.join(', ')}.`);
@@ -824,6 +825,7 @@ async function plugin() {
       'description: The map of how the project works, in Mycel. Use it when the project is connected to Mycel or the person talks about the map, blocks, a proposal or test marks.', '---',
       'Mycel is a shared project map: the person watches it in the browser and sees the agent\'s edits at once.', '',
       '- At the start of work, read the guide: the `mycel_guide` tool, then the part of the map you need: `mycel_context` with `focus`.',
+      '- Write the map in the language the person uses with you: block titles and texts, notes, link labels, proposal titles, the `doing` line. Names from code and file names stay as they are.',
       '- When you change code, keep the map true: technical and code blocks have the `files` field (the block\'s files) and `test` (the check command). A block whose files you changed is marked "possibly outdated": update its text (`mycel_apply`) or confirm it (`mycel_fresh`).',
       '- Tests: `mycel_check` with block ids: borders turn green and red while the person watches.',
       '- Logic changes the person has not approved yet: `mycel_propose`, the person decides. What changed in the session: `mycel_review`; where the gaps are: `mycel_health`.', ''].join('\n')]

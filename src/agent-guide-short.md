@@ -10,8 +10,10 @@ Map levels follow nesting:
   from the project root, `test` is its test command.
 - Code (sub-maps of Technical): steps. The title is an action, the text names the function and file.
 
-Language: write map content (block titles and texts, notes, link labels) in the language the person uses with you;
-if unsure, in English.
+**Language.** Everything the person sees in Mycel is written in the language they use with you: block titles and
+texts, notes, link labels, proposal titles, the `doing` line and the reasons in history (`-m`, `message`). If they
+write to you in Russian, the map is in Russian. English only when you cannot tell. Names from code, file names and
+commands stay as they are.
 
 How to work:
 1. Read the map: `mycel_context` (with `brief: true`, shorter). If it is empty, build it with `mycel_build`: first

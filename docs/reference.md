@@ -46,7 +46,7 @@ Inside a project, "‹ name" in the bottom bar goes back to the list.
 
 The colour theme follows the system setting. The canvas position and zoom are remembered in the browser.
 
-The interface is in English; Russian can be chosen with the EN / RU switch (at the right of the home page header and of the map's bottom bar), and a browser set to Russian gets Russian until a choice is made. The choice is remembered in the browser; switching keeps the open map, view and edits. Everything agents read (command output, MCP tools, the agent guide, server messages) is in English only.
+The interface is in English; Russian can be chosen with the EN / RU switch (at the right of the home page header and of the map's bottom bar), and a browser set to Russian gets Russian until a choice is made. The choice is remembered in the browser; switching keeps the open map, view and edits. Everything agents read (command output, MCP tools, the agent guide, server messages) is in English only. The map itself is written by agents in the language the person uses with them: block titles and texts, notes, link labels, proposal titles, the line under the map and the reasons in history. The guide, the plugin skill, the MCP server instructions and the session-start overview all say so.
 
 ## Agents
 

@@ -23,7 +23,7 @@ async function handle({ id, method, params }) {
     return send({ id, result: {
       protocolVersion: versions.includes(params?.protocolVersion) ? params.protocolVersion : versions[0],
       capabilities: { tools: {} }, serverInfo: { name: 'mycel', version },
-      instructions: 'Mycel is a shared project map: the person watches it in the browser and sees your edits at once. Start with mycel_guide and mycel_context. Mycel has no chat: answer the person here, and learn about their actions in Mycel through mycel_wait and mycel_changes.'
+      instructions: 'Mycel is a shared project map: the person watches it in the browser and sees your edits at once. Start with mycel_guide and mycel_context. Mycel has no chat: answer the person here, and learn about their actions in Mycel through mycel_wait and mycel_changes. Write the map (titles, texts, notes, link labels, the doing line) in the language the person uses with you.'
     } });
   }
   if (method === 'ping') return send({ id, result: {} });

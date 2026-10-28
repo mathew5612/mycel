@@ -52,8 +52,10 @@ Before a task:
   block they are working in, with full text.
 - If Mycel is unavailable, say so; do not claim the map is up to date.
 
-Language: write map content (block titles and texts, notes, link labels) in the language the person uses with you;
-if unsure, in English.
+**Language.** Everything the person sees in Mycel is written in the language they use with you: block titles and
+texts, notes, link labels, proposal titles, the `doing` line and the reasons in history (`-m`, `message`). If they
+write to you in Russian, the map is in Russian. English only when you cannot tell. Names from code, file names and
+commands stay as they are.
 
 Map levels follow nesting. Concept and Mechanics are read by a person who does not program: from them they understand
 what is what and set tasks. Technical and Code are read by developers.
